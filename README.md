@@ -4,13 +4,13 @@ C/C++ shared library that can be compiled with g++/gcc on Linux 64-bit and Windo
 ## CentOS Build	
 ```
 $ sudo yum install gcc-c++
-$ cd ./build
+$ cd libhsm/build
 $ ./build_libhsm
 ```
 
 ## CentOS Install
 ```
-$ sudo cp ./build/libhsm.so /usr/lib64/libhsm.so
+$ sudo cp libhsm/build/libhsm.so /usr/lib64/libhsm.so
 ```
 
 			
