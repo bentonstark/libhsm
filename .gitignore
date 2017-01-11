@@ -1,0 +1,7 @@
+/Debug
+/Release/libhsm.so
+/Release/src/p11hsm.o
+/.settings
+/Release/
+/.cproject
+/.project

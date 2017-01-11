@@ -1,0 +1,16 @@
+echo BUILDING LIBHSM.SO
+echo =======================================
+rm libhsm.so
+rm src -rf
+cp ../src -r .
+make all
+echo CLEAN UP
+echo =======================================
+rm src -rf
+echo Done!
+echo
+echo INSTALL NOTES
+echo =======================================
+echo To install, manually copy libhsm.so to /usr/lib64
+echo $ sudo cp libhsm.so /usr/lib64/libhsm.so
+echo
