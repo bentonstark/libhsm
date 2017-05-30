@@ -49,10 +49,8 @@ static void* _p11_lib_handle = NULL;
 #define HSMLIB_PRODUCT_VERSION "2.0.1"
 #define HSMLIB_PRODUCT_VERSION_LEN 20
 #define MAX_TOKEN_OBJECT_LABEL_SIZE 200
-#define WRAP_BUF_LEN 3000
-#define WRAPPING_KEY_LABEL_LEN 48
 #define MAX_SLOT_COUNT  50
-#define SEED_SIZE 128
+
 
 // type def
 typedef unsigned char uchar;
