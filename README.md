@@ -12,5 +12,7 @@ $ ./build_libhsm
 ```
 $ sudo cp libhsm/build/libhsm.so /usr/lib64/libhsm.so
 ```
+	
+## Header File Exports
 
-			
+https://github.com/bentonstark/libhsm/blob/master/src/p11hsm.h

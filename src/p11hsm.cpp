@@ -46,9 +46,9 @@ static void* _p11_lib_handle = NULL;
 #define DIM(a) (sizeof(a)/sizeof(a[0]))
 #endif
 
-#define HSMLIB_PRODUCT_VERSION "2.0.0"
+#define HSMLIB_PRODUCT_VERSION "2.0.1"
 #define HSMLIB_PRODUCT_VERSION_LEN 20
-#define MAX_TOKEN_OBJECT_LABEL_SIZE 32
+#define MAX_TOKEN_OBJECT_LABEL_SIZE 200
 #define WRAP_BUF_LEN 3000
 #define WRAPPING_KEY_LABEL_LEN 48
 #define MAX_SLOT_COUNT  50
@@ -486,8 +486,8 @@ CK_RV __gen_rsa_key_pair(CK_SESSION_HANDLE h_session, CK_ULONG key_size, CK_BYTE
 //
 //	Parameters:
 //		h_session	 		-- a session handle for a logged in session.
-//		curve_params	 	-- byte string containing the ASN.1 DER encoded curve parameter data
-//		curve_params_len	-- length of derParams
+//		ec_params	 		-- byte string containing the ASN.1 DER encoded curve parameter data
+//		ec_params_len		-- length of derParams
 //		pub_key_label 		-- public key label
 //		pub_key_label_len	-- public key label length
 //		pvt_key_label		-- private key label
@@ -511,7 +511,7 @@ CK_RV __gen_rsa_key_pair(CK_SESSION_HANDLE h_session, CK_ULONG key_size, CK_BYTE
 //
 //----------------------------------------------------------------------------------------
 
-CK_RV __gen_ec_key_pair(CK_SESSION_HANDLE h_session, CK_BYTE_PTR curve_params, CK_ULONG curve_params_len,
+CK_RV __gen_ec_key_pair(CK_SESSION_HANDLE h_session, CK_BYTE_PTR ec_params, CK_ULONG ec_params_len,
 					 CK_CHAR_PTR pub_key_label, CK_ULONG pub_key_label_len, CK_CHAR_PTR pvt_key_label, CK_ULONG pvt_key_label_len,
 					 CK_BBOOL token, CK_BBOOL private_, CK_BBOOL modifable, CK_BBOOL extractable, CK_BBOOL sign,
 					 CK_BBOOL verify, CK_BBOOL encrypt, CK_BBOOL decrypt, CK_BBOOL wrap, CK_BBOOL unwrap, CK_BBOOL derive,
@@ -536,7 +536,7 @@ CK_RV __gen_ec_key_pair(CK_SESSION_HANDLE h_session, CK_BYTE_PTR curve_params, C
 	  {CKA_MODIFIABLE, 		&modifable, 	sizeof(modifable)},
 	  {CKA_ENCRYPT, 		&encrypt, 		sizeof(encrypt)},
 	  {CKA_WRAP, 			&wrap, 			sizeof(wrap)},
-	  {CKA_ECDSA_PARAMS, 	curve_params, 	curve_params_len},
+	  {CKA_ECDSA_PARAMS, 	ec_params, 		ec_params_len},
 	  {CKA_LABEL, 			pub_key_label, 	pub_key_label_len}
 	};
 
@@ -2006,8 +2006,8 @@ int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_s
 //	Inputs:
 //		msg_buf_len					-- length of the error message buffer
 //		h_session					-- handle of an open session with the HSM.
-//		curve_params				-- byte string containing the ASN.1 DER encoded curve parameter or OID data
-//		curve_params_len			-- length of derParams
+//		ec_params					-- byte string containing the ASN.1 DER encoded curve parameter or OID data
+//		ec_params_len				-- length of derParams
 //		pub_key_label				-- label for the public key
 //		pub_key_label_len			-- length of public key label
 //		pvt_key_label				-- label for the private key
@@ -2027,7 +2027,7 @@ int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_s
 //
 //----------------------------------------------------------------------------------------
 int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
-								char* curve_params,  int curve_params_len, char* pub_key_label,
+								char* ec_params,  int ec_params_len, char* pub_key_label,
 								int pub_key_label_len, char* pvt_key_label, int pvt_key_label_len,
 								int token, int private_, int modifiable, int extractable, int sign,
 								int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
@@ -2045,16 +2045,16 @@ int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 	}
 
 	//	null pointer check for DER encoded ASN.1 ECC curve parameters
-	if (!curve_params)
+	if (!ec_params)
 	{
-		snprintf(msg_buf, msg_buf_len, "create_ec_key_pair: curve_params null pointer unexpected.");
+		snprintf(msg_buf, msg_buf_len, "create_ec_key_pair: ec_params null pointer unexpected.");
 		return FALSE;
 	}
 
 	//	null pointer check for DER encoded ASN.1 ECC curve parameters
-	if (!curve_params_len)
+	if (!ec_params_len)
 	{
-		snprintf(msg_buf, msg_buf_len, "create_ec_key_pair: curve_params_len must be greater than zero.");
+		snprintf(msg_buf, msg_buf_len, "create_ec_key_pair: ec_params_len must be greater than zero.");
 		return FALSE;
 	}
 
@@ -2163,8 +2163,8 @@ int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 
 	// setup templates and create the EC key pair on the HSM
 	rv = __gen_ec_key_pair(h_session,
-						  (CK_BYTE_PTR)curve_params,
-						  (CK_ULONG)curve_params_len,
+						  (CK_BYTE_PTR)ec_params,
+						  (CK_ULONG)ec_params_len,
 						  (CK_CHAR_PTR)pub_key_label,
 						  pub_key_label_len,
 						  (CK_CHAR_PTR)pvt_key_label,
@@ -3043,6 +3043,147 @@ int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* p
 
 	return TRUE;
 }
+
+//----------------------------------------------------------------------------------------
+// import_ec_public_key()
+//	Imports clear-text EC public key data object on the HSM.
+//
+//	Returns:
+//		FALSE if an error occurs; otherwise TRUE
+//
+//	Modifies:
+//		msg_buf				-- contains any error messages
+//		h_pub_key 			-- public key object handle
+//
+//	Inputs:
+//		msg_buf_len			-- byte length of provided error message buffer
+//		h_session			-- session handle
+//		pub_key_label	  	-- label of the EC public key object on the HSM
+//		pub_key_label_len	-- public key label length
+//		ec_params			-- binary array containing the EC parameters curve definition or OID
+//		ec_params_len		-- length of the EC parameters curve definition or OID
+//		ec_point			-- binary array containing the unique EC point
+//		ec_point_len		-- length of the EC point definition array
+//		token				-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
+//		private_			-- 1 to indicate the keys are private to the HSM and require an authenticated session; otherwise 0
+//	    modifiable			-- 1 to indicate the keys can be modified; otherwise 0
+//		verify				-- 1 to indicate the public key can verify; otherwise 0
+//		encrypt				-- 1 to indicate the public key can encrypt; otherwise 0
+//		wrap				-- 1 to indicate the public key can wrap; otherwise 0
+//		overwrite			-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
+//----------------------------------------------------------------------------------------
+int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pub_key_label, int pub_key_label_len,
+						 char* ec_params, int ec_params_len, char* ec_point, int ec_point_len,
+						 int token, int _private, int modifiable, int verify, int encrypt, int wrap, int overwrite, int* h_pub_key)
+{
+	CK_RV rv = 0;
+
+	//	null pointer check for session handle
+	if (!h_session)
+	{
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: h_session invalid value.");
+		return FALSE;
+	}
+
+	//	null pointer check for key label
+	if (!pub_key_label)
+	{
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: pub_key_label null pointer unexpected.");
+		return FALSE;
+	}
+
+	// check to make sure the public key label is not too long
+	if (pub_key_label_len > MAX_TOKEN_OBJECT_LABEL_SIZE)
+	{
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: pub_key_label parameter too long.");
+		return FALSE;
+	}
+
+	//	null pointer check for EC curve parameters
+	if (!ec_params)
+	{
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: ec_params null pointer unexpected.");
+		return FALSE;
+	}
+
+	//	null pointer check for EC point
+	if (!ec_point)
+	{
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: ec_point null pointer unexpected.");
+		return FALSE;
+	}
+
+	// make sure that the key label does not already exist on the HSM
+	CK_OBJECT_HANDLE h_test = 0;
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pub_key_label, pub_key_label_len, (int*)&h_test);
+	if (rv == FALSE)
+	{
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: get_object_handle() failed.");
+		return FALSE;
+	}
+
+	if (h_test)
+	{
+		if (overwrite)
+		{
+			// destroy existing public key label object on the HSM
+			rv = _p11->C_DestroyObject(h_session, h_test);
+			if (rv != CKR_OK)
+			{
+				snprintf(msg_buf, msg_buf_len, "import_ec_public_key: PKCS#11 C_DestroyObject failed for object label '%s' with the return value %d.", pub_key_label, (int)rv);
+	   			__append_return_code(rv, msg_buf, msg_buf_len);
+				return FALSE;
+			}
+		}
+		else
+		{
+			snprintf(msg_buf, msg_buf_len, "import_ec_public_key: object label '%s' already exists.", pub_key_label);
+			return FALSE;
+		}
+	}
+
+	CK_OBJECT_CLASS pub_class = CKO_PUBLIC_KEY;
+	CK_KEY_TYPE ec_type = CKK_EC;
+	CK_BBOOL b_token = token;
+	CK_BBOOL b_private = _private;
+	CK_BBOOL b_modifiable = modifiable;
+	CK_BBOOL b_encrypt = encrypt;
+	CK_BBOOL b_verify = verify;
+	CK_BBOOL b_wrap = wrap;
+
+	CK_ATTRIBUTE pub_template[] = {
+	  {CKA_CLASS, &pub_class, sizeof(pub_class)},
+	  {CKA_KEY_TYPE, &ec_type, sizeof(ec_type)},
+	  {CKA_TOKEN, &b_token, sizeof(b_token)},
+	  {CKA_PRIVATE, &b_private, sizeof(b_private)},
+	  {CKA_MODIFIABLE, &b_modifiable, sizeof(b_modifiable)},
+	  {CKA_ENCRYPT, &b_encrypt, sizeof(b_encrypt)},
+	  {CKA_VERIFY, &b_verify, sizeof(b_verify)},
+	  {CKA_WRAP, &b_wrap, sizeof(b_wrap)},
+	  {CKA_EC_PARAMS, ec_params, (CK_ULONG)ec_params_len},
+	  {CKA_EC_POINT, ec_point, (CK_ULONG)ec_point_len},
+	  {CKA_LABEL, pub_key_label, (CK_ULONG)pub_key_label_len}
+	};
+
+	CK_OBJECT_HANDLE h_pub;
+	CK_ATTRIBUTE* p_attrib = pub_template;
+	CK_ULONG pub_template_len = DIM(pub_template);
+
+	rv = _p11->C_CreateObject(h_session, p_attrib, pub_template_len, &h_pub);
+
+	if (rv != CKR_OK)
+	{
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: PKCS#11 C_CreateObject() executed with errors; return value %d.", (int)rv);
+		__append_return_code(rv, msg_buf, msg_buf_len);
+		return FALSE;
+	}
+
+	*h_pub_key = h_pub;
+
+	return TRUE;
+}
+
+
 
 //----------------------------------------------------------------------------------------
 // wrap_key()

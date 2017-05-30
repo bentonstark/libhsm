@@ -469,8 +469,8 @@ EXTERN_C int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, 
 //	Inputs:
 //		msg_buf_len					-- length of the error message buffer
 //		h_session					-- handle of an open session with the HSM.
-//		curve_params				-- byte string containing the ASN.1 DER encoded curve parameter or OID data
-//		curve_params_len			-- length of derParams
+//		ec_params					-- byte string containing the ASN.1 DER encoded curve parameter or OID data
+//		ec_params_len				-- length of derParams
 //		pub_key_label				-- label for the public key
 //		pub_key_label_len			-- length of public key label
 //		pvt_key_label				-- label for the private key
@@ -490,7 +490,7 @@ EXTERN_C int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, 
 //
 //----------------------------------------------------------------------------------------
 EXTERN_C int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
-								char* curve_params,  int curve_params_len, char* pub_key_label,
+								char* ec_params,  int ec_params_len, char* pub_key_label,
 								int pub_key_label_len, char* pvt_key_label, int pvt_key_label_len,
 								int token, int private_, int modifiable, int extractable, int sign,
 								int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
@@ -762,6 +762,39 @@ EXTERN_C int import_data_object(char* msg_buf, int msg_buf_len, int h_session, c
 EXTERN_C int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pub_key_label, int pub_key_label_len,
 						           char* pub_exp, int pub_exp_len, char* pub_mod, int pub_mod_len,
 						           int token, int _private, int modifiable, int verify, int encrypt, int wrap, int overwrite, int* h_pub_key);
+
+
+//----------------------------------------------------------------------------------------
+// import_ec_public_key()
+//	Imports clear-text EC public key data object on the HSM.
+//
+//	Returns:
+//		FALSE if an error occurs; otherwise TRUE
+//
+//	Modifies:
+//		msg_buf				-- contains any error messages
+//		h_pub_key 			-- public key object handle
+//
+//	Inputs:
+//		msg_buf_len			-- byte length of provided error message buffer
+//		h_session			-- session handle
+//		pub_key_label	  	-- label of the EC public key object on the HSM
+//		pub_key_label_len	-- public key label length
+//		ec_params			-- binary array containing the EC parameters curve definition or OID
+//		ec_params_len		-- length of the EC parameters curve definition or OID
+//		ec_point			-- binary array containing the unique EC point
+//		ec_point_len		-- length of the EC point definition array
+//		token				-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
+//		private_			-- 1 to indicate the keys are private to the HSM and require an authenticated session; otherwise 0
+//	    modifiable			-- 1 to indicate the keys can be modified; otherwise 0
+//		verify				-- 1 to indicate the public key can verify; otherwise 0
+//		encrypt				-- 1 to indicate the public key can encrypt; otherwise 0
+//		wrap				-- 1 to indicate the public key can wrap; otherwise 0
+//		overwrite			-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
+//----------------------------------------------------------------------------------------
+EXTERN_C int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pub_key_label, int pub_key_label_len,
+						 	 	  char* ec_params, int ec_params_len, char* ec_point, int ec_point_len,
+								  int token, int _private, int modifiable, int verify, int encrypt, int wrap, int overwrite, int* h_pub_key);
 
 //----------------------------------------------------------------------------------------
 // wrap_key()
