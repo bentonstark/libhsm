@@ -1,8 +1,8 @@
 #libhsm
-C/C++ shared library that can be compiled with g++/gcc on Linux 64-bit and Windows 64-bit using Visual Studio or g++/gcc.  The library provides a simplied API for access the PKCS#11 API to support higher level languages.  Compiles with OASIS PKCS#11 v2.20. 
+C/C++ shared library that can be compiled with g++/gcc on Linux 64-bit and Windows 64-bit using Visual Studio or g++/gcc.  The library provides a simplified API for access the PKCS#11 API to support higher level languages.  Compiles with OASIS PKCS#11 v2.20. 
 
 ## Supported HSMs
-The pihsm module has been tested to work with the following HSM devices and software based testbed HSMs.
+The libhsm library works with the following HSM devices and software based HSMs.
 - SafeNet / Gemalto Luna SA-4
 - SafeNet / Gemalto Luna SA-5
 - SafeNet / Gemalto Luna PCIe K5/K6
