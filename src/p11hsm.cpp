@@ -1,10 +1,3 @@
-//  
-// Copyright (c) 2016-present, Cisco Systems, Inc. All rights reserved.
-//
-// This source code is licensed under the GPLv2 license found in the
-// LICENSE.txt file in the root directory of this source tree. 
-//
-
 //----------------------------------------------------------------------------------------
 // p11hsm.cpp
 //
@@ -17,22 +10,25 @@
 //
 // PKCS#11 v2.20 mechanisms and other definitions can be found in /oasis/pkcs11t.h
 //
-// Authored by Benton Stark (benton.stark@gmail.com)
+// Written by Benton Stark (bestark@cisco.com)
 // Sept. 7, 2016
 //----------------------------------------------------------------------------------------
 
 
-// includes
+// project includes
 #include "p11hsm.h"
+#include "mechtype.h"
 
-// include files
+// compiler include files
 #include <cstdio>
 #include <ctime>
 #include <cctype>
 #include <cstring>
 #include <cstdlib>
 
+// oasis specific includes
 #include "oasis/cryptoki.h"
+
 
 // global definitions
 static CK_FUNCTION_LIST* _p11 = NULL;
@@ -46,20 +42,21 @@ static void* _p11_lib_handle = NULL;
 #define DIM(a) (sizeof(a)/sizeof(a[0]))
 #endif
 
-#define HSMLIB_PRODUCT_VERSION "2.0.1"
+#define HSMLIB_PRODUCT_VERSION "2.4.0"
 #define HSMLIB_PRODUCT_VERSION_LEN 20
 #define MAX_TOKEN_OBJECT_LABEL_SIZE 200
+#define WRAP_BUF_LEN 3000
 #define MAX_SLOT_COUNT  50
-
+#define SEED_SIZE 128
 
 // type def
 typedef unsigned char uchar;
 
 // prototypes
-void __append_return_code(CK_RV code, char* text, unsigned int text_len);
+void __append_return_code(CK_RV code, char* text, unsigned long text_len);
 
 
-CK_BBOOL __open_P11_library(char* libPath)
+CK_BBOOL __open_P11_library(const char* libPath)
 {
 	CK_C_GetFunctionList C_GetFunctionList = NULL;
 
@@ -109,12 +106,12 @@ CK_BBOOL __close_p11_library() {
 }
 
 
-int __copy_fixed_padded_str_to_null_str(CK_CHAR * dest, const CK_CHAR * src, int size)
+int __copy_fixed_padded_str_to_null_str(CK_CHAR * dest, const CK_CHAR * src, unsigned long size)
 {
 	CK_CHAR padVal = ' ';
 
 	// find end of the padded string
-	int lastChar = size - 1;
+	unsigned long lastChar = size - 1;
 	for(int i=size-1; i >= 0; i--)
 	{
 		if (src[i] != padVal)
@@ -125,7 +122,7 @@ int __copy_fixed_padded_str_to_null_str(CK_CHAR * dest, const CK_CHAR * src, int
 	}
 
 	// copy the string
-	int j=0;
+	unsigned long j=0;
 	for(; j <= lastChar; j++)
 	{
 		dest[j] = src[j];
@@ -158,7 +155,7 @@ int __copy_fixed_padded_str_to_null_str(CK_CHAR * dest, const CK_CHAR * src, int
 //
 //----------------------------------------------------------------------------------------
 CK_RV __wrap_key(CK_SESSION_HANDLE h_session, CK_BYTE_PTR wrap_buf, CK_ULONG_PTR wrap_buf_len, CK_OBJECT_HANDLE h_wrap_key,
-				 CK_OBJECT_HANDLE h_key_to_wrap, CK_MECHANISM_TYPE mech_type, char* iv, CK_ULONG iv_len )
+				 CK_OBJECT_HANDLE h_key_to_wrap, CK_MECHANISM_TYPE mech_type, CK_BYTE_PTR iv, CK_ULONG iv_len )
 {
 	CK_RV rv = 0;
 	CK_MECHANISM mech;
@@ -207,11 +204,14 @@ CK_RV __wrap_key(CK_SESSION_HANDLE h_session, CK_BYTE_PTR wrap_buf, CK_ULONG_PTR
 //		mech_type		 -- wrapping key mechanism type (DES3, AES, etc)
 //		key_label		 -- key label for the new unwrapped private key
 //		key_label_len	 -- key label length
+//		key_id			 -- key id for the new unwrapped private key
+//		key_id_len		 -- key id length
 //		key_buf			 -- key buffer containing bytes of wrapped (encrypted) private key
 //		key_buf_len		 -- length of the private key buffer in bytes
 //		key_type		 -- type of private key (DES, DES2, DES3, AES, etc)
 //		token			 -- 1 to indicate the private key exists on the token and not the session; otherwise 0
 //		private			 -- 1 to indicate the private key is private and can only be accessed after authentication; otherwise 0
+//		sensitive	     -- 1 to indicate the private key is sensitive; otherwise 0
 //		modifiable		 -- 1 to indicate the private key can be modified; otherwise 0
 //		extractable		 -- 1 to indicate the private key can be extracted; otherwise 0
 //		sign			 -- 1 to indicate the private key can sign; otherwise 0
@@ -224,9 +224,10 @@ CK_RV __wrap_key(CK_SESSION_HANDLE h_session, CK_BYTE_PTR wrap_buf, CK_ULONG_PTR
 //		CK_RV, error code if there is any error.
 //
 //----------------------------------------------------------------------------------------
-CK_RV __unwrap_private_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_key, CK_BYTE_PTR iv, CK_ULONG iv_len,
-					 CK_MECHANISM_TYPE mech_type, char* key_label, CK_ULONG key_label_len, CK_BYTE_PTR key_buf, CK_ULONG key_buf_len,
-					 CK_KEY_TYPE key_type, CK_BBOOL token, CK_BBOOL private_, CK_BBOOL modifiable, CK_BBOOL extractable,
+CK_RV __unwrap_private_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_key, CK_BYTE_PTR iv, CK_ULONG iv_len, CK_MECHANISM_TYPE mech_type,
+					 CK_CHAR_PTR key_label, CK_ULONG key_label_len, CK_CHAR_PTR key_id, CK_ULONG key_id_len,
+					 CK_BYTE_PTR key_buf, CK_ULONG key_buf_len,
+					 CK_KEY_TYPE key_type, CK_BBOOL token, CK_BBOOL private_,CK_BBOOL sensitive, CK_BBOOL modifiable, CK_BBOOL extractable,
 					 CK_BBOOL sign, CK_BBOOL decrypt, CK_BBOOL unwrap, CK_BBOOL derive,
 					 CK_OBJECT_HANDLE_PTR h_key)
 {
@@ -255,13 +256,12 @@ CK_RV __unwrap_private_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_
 	}
 
 	CK_OBJECT_CLASS key_class = CKO_PRIVATE_KEY;
-	CK_BBOOL sensitive = TRUE;
 
 	CK_ATTRIBUTE key_template[] = {
 		{CKA_CLASS,			&key_class,	   	sizeof(key_class)},
 		{CKA_KEY_TYPE,		&key_type,	   	sizeof(key_type)},
 		{CKA_TOKEN,			&token,	   		sizeof(token)},
-		{CKA_SENSITIVE,		&sensitive,   	sizeof(sensitive)},  // always set to TRUE (1)
+		{CKA_SENSITIVE,		&sensitive,   	sizeof(sensitive)},
 		{CKA_PRIVATE,		&private_,	   	sizeof(private_)},
 		{CKA_DECRYPT,		&decrypt,     	sizeof(decrypt)},
 		{CKA_SIGN,			&sign,		   	sizeof(sign)},
@@ -269,12 +269,13 @@ CK_RV __unwrap_private_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_
 		{CKA_DERIVE,		&derive,	   	sizeof(derive)},
 		{CKA_MODIFIABLE,	&modifiable,  	sizeof(modifiable)},
 		{CKA_EXTRACTABLE,	&extractable, 	sizeof(extractable)},
+		{CKA_ID,			key_id,      	key_id_len},
 		{CKA_LABEL,			key_label,      key_label_len}
 	};
 
 	CK_ATTRIBUTE_PTR p_key_template = key_template;
 
-	CK_RV rv = _p11->C_UnwrapKey(h_session, &mech, h_wrap_key, (CK_BYTE_PTR)key_buf, key_buf_len,
+	CK_RV rv = _p11->C_UnwrapKey(h_session, &mech, h_wrap_key, key_buf, key_buf_len,
 								 p_key_template, DIM(key_template), h_key);
 
    return rv;
@@ -293,12 +294,15 @@ CK_RV __unwrap_private_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_
 //		mech_type			-- wrapping key mechanism type (DES3, AES, etc)
 //		key_label			-- key label for the new unwrapped secret key
 //		key_label_len		-- key label length
+//		key_id				-- key id for the new unwrapped secret key
+//		key_id_len			-- key id length
 //		key_buf		 		-- key buffer containing bytes of wrapped (encrypted) secret key
 //		key_buf_len		 	-- length of the secret key buffer in bytes
 //		key_type		 	-- type of secret key (DES, DES2, DES3, AES, etc)
 //		key_size			--	size of the secret key in bits (112, 128, 192, 256, etc)
 //		token				-- 1 to indicate the secret key exists on the token and not the session; otherwise 0
 //		private				-- 1 to indicate the secret key is private and can only be accessed after authentication; otherwise 0
+//		sensitive	    	-- 1 to indicate the private key is sensitive; otherwise 0
 //		modifiable		 	-- 1 to indicate the secret key can be modified; otherwise 0
 //		extractable			-- 1 to indicate the secret key can be extracted; otherwise 0
 //		sign				-- 1 to indicate the secret key can sign; otherwise 0
@@ -315,8 +319,9 @@ CK_RV __unwrap_private_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_
 //
 //----------------------------------------------------------------------------------------
 CK_RV __unwrap_secret_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_key, CK_BYTE_PTR iv, CK_ULONG iv_len, CK_MECHANISM_TYPE mech_type,
-						  CK_CHAR_PTR key_label, CK_ULONG key_label_len, CK_BYTE_PTR key_buf, CK_ULONG key_buf_len, CK_KEY_TYPE key_type, CK_ULONG key_size,
-						  CK_BBOOL token, CK_BBOOL private_, CK_BBOOL modifiable, CK_BBOOL extractable, CK_BBOOL sign,
+						  CK_CHAR_PTR key_label, CK_ULONG key_label_len, CK_CHAR_PTR key_id, CK_ULONG key_id_len,
+						  CK_BYTE_PTR key_buf, CK_ULONG key_buf_len, CK_KEY_TYPE key_type, CK_ULONG key_size,
+						  CK_BBOOL token, CK_BBOOL private_, CK_BBOOL sensitive, CK_BBOOL modifiable, CK_BBOOL extractable, CK_BBOOL sign,
 						  CK_BBOOL verify, CK_BBOOL encrypt, CK_BBOOL decrypt, CK_BBOOL wrap, CK_BBOOL unwrap, CK_BBOOL derive,
 						  CK_OBJECT_HANDLE_PTR h_key)
 {
@@ -345,7 +350,6 @@ CK_RV __unwrap_secret_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_k
 	}
 
 	CK_OBJECT_CLASS key_class = CKO_SECRET_KEY;
-	CK_BBOOL sensitive = TRUE;
 
 	CK_ATTRIBUTE_PTR p_key_template = NULL;
 	CK_ULONG key_template_len = 0;
@@ -359,7 +363,7 @@ CK_RV __unwrap_secret_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_k
 		{CKA_CLASS,			&key_class,	   		sizeof(key_class)},
 		{CKA_KEY_TYPE,		&key_type,	   		sizeof(key_type)},
 		{CKA_TOKEN,			&token,	   			sizeof(token)},
-		{CKA_SENSITIVE,		&sensitive,   		sizeof(sensitive)},  // always default to TRUE (1)
+		{CKA_SENSITIVE,		&sensitive,   		sizeof(sensitive)},
 		{CKA_PRIVATE,		&private_,	   		sizeof(private_)},
 		{CKA_ENCRYPT,		&encrypt,     		sizeof(encrypt)},
 		{CKA_DECRYPT,		&decrypt,     		sizeof(decrypt)},
@@ -371,6 +375,7 @@ CK_RV __unwrap_secret_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_k
 		{CKA_MODIFIABLE,	&modifiable,  		sizeof(modifiable)},
 		{CKA_EXTRACTABLE,	&extractable, 		sizeof(extractable)},
 		{CKA_VALUE_LEN,		&bytes_key_size, 	sizeof(bytes_key_size)},
+		{CKA_ID,			key_id,      		key_id_len},
 		{CKA_LABEL,			key_label,      	key_label_len}
 	};
 
@@ -385,66 +390,80 @@ CK_RV __unwrap_secret_key(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_wrap_k
 
 //----------------------------------------------------------------------------------------
 // __gen_rsa_key_pair()
-//	Generates a RSA key pair on HSM.  CKA_SENSITIVE is always set to TRUE (1)
+//	Generates a RSA key pair on HSM.
 //  for private key which instructs the HSM to do all key operations in hardware.
 //
 //	Parameters:
 //		h_session		-- a session handle for a logged in session.
+//		mech_type		-- mechanism type (usually CKM_RSA_X9_31_KEY_PAIR_GEN or CKM_RSA_PKCS_KEY_PAIR_GEN)
+// 						   Note: CKM_RSA_X9_31_KEY_PAIR_GEN is functionally identical to CKM_RSA_PKCS_KEY_PAIR_GEN
+//						   but provides stronger guarantee of p and q values as defined in X9.31
+// 						   Cavium HSMs only support the CKM_RSA_X9_31_KEY_PAIR_GEN mechanism
 //		key_size		-- length of keyPair
 //		pub_exp			-- public exponent byte array
 //		pub_exp_len		-- length of the public exponent byte array
-//		h_pub_key		-- handle of the public key.
-//		h_pvt_key		-- handle of the private key.
+//		pub_label		-- public key label
+//		pub_label_len	-- length of public key label
+//		pvt_label		-- private key label
+//		pvt_label_len	-- length of private key label
+//		pub_id			-- public key ID value
+//		pub_id_len		-- length of public key ID value
+//		pvt_id			-- private key ID value
+//		pvt_id_len		-- length of private key ID value
 //		token			-- 1 to indicate the keys exist on the token and not the session; otherwise 0
-//		private			-- 1 to indicate the keys are private and can only be accessed after authentication; otherwise 0
+//		pub_private 	-- 1 to indicate the public key is marked private and can only be accessed after authentication; otherwise 0
+//		pvt_private 	-- 1 to indicate the private key is marked private and can only be accessed after authentication; otherwise 0
+//		sensitive	    -- 1 to indicate the private key is sensitive; otherwise 0
 //		modifiable		-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable		-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign			-- 1 to indicate the private key can sign; otherwise 0
 //		verify			-- 1 to indicate the public key can verify; otherwise 0
 //		encrypt			-- 1 to indicate the public key can encrypt; otherwise 0
-//		eecrypt			-- 1 to indicate the private key can decrypt; otherwise 0
+//		decrypt			-- 1 to indicate the private key can decrypt; otherwise 0
 //		wrap			-- 1 to indicate the public key can wrap; otherwise 0
 //		unwrap			-- 1 to indicate the private key can unwrap; otherwise 0
 //		derive			-- 1 to indicate the private key can be used to derive other keys; otherwise 0
-//		pub_key_label	-- public key label.
-//		pvt_key_label	-- private key label.
+//		h_pub_key		-- handle of the public key.
+//		h_pvt_key		-- handle of the private key.
 //
 //	Returns:
 //		CK_RV, error code if there is any error.
 //
 //----------------------------------------------------------------------------------------
 CK_RV __gen_rsa_key_pair(CK_SESSION_HANDLE h_session, CK_ULONG key_size, CK_BYTE_PTR pub_exp, CK_ULONG pub_exp_len,
-					 CK_CHAR_PTR pub_key_label, CK_ULONG pub_key_label_len, CK_CHAR_PTR pvt_key_label, CK_ULONG pvt_key_label_len,
-					 CK_BBOOL token, CK_BBOOL private_, CK_BBOOL modifiable, CK_BBOOL extractable, CK_BBOOL sign,
+					 CK_CHAR_PTR pub_label, CK_ULONG pub_label_len, CK_CHAR_PTR pvt_label, CK_ULONG pvt_label_len,
+					 CK_BYTE_PTR pub_id, CK_ULONG pub_id_len, CK_BYTE_PTR pvt_id, CK_ULONG pvt_id_len,
+					 CK_MECHANISM_TYPE mech_type, CK_BBOOL token, CK_BBOOL pub_private, CK_BBOOL pvt_private,
+					 CK_BBOOL sensitive, CK_BBOOL modifiable, CK_BBOOL extractable, CK_BBOOL sign,
 					 CK_BBOOL verify, CK_BBOOL encrypt, CK_BBOOL decrypt, CK_BBOOL wrap, CK_BBOOL unwrap, CK_BBOOL derive,
-					 CK_OBJECT_HANDLE_PTR h_pub_key, CK_OBJECT_HANDLE_PTR h_pvt_key)
+					 CK_OBJECT_HANDLE_PTR h_pub, CK_OBJECT_HANDLE_PTR h_pvt)
 {
 	CK_RV rv = CKR_OK;
 	CK_ULONG pub_template_len = 0;
 	CK_ULONG pvt_template_len = 0;
 
-	CK_MECHANISM mech = {CKM_RSA_PKCS_KEY_PAIR_GEN, 0, 0};
-	CK_OBJECT_CLASS	pub_class  = CKO_PUBLIC_KEY;
+	CK_MECHANISM mech = {mech_type, 0, 0};
+	CK_OBJECT_CLASS	pub_class = CKO_PUBLIC_KEY;
 	CK_OBJECT_CLASS	pvt_class = CKO_PRIVATE_KEY;
-	CK_KEY_TYPE key_type	= CKK_RSA;
+	CK_KEY_TYPE key_type = CKK_RSA;
 
 	CK_ATTRIBUTE_PTR  p_pub_template;
 	CK_ATTRIBUTE_PTR  p_pvt_template;
-	CK_BBOOL bSensitive = TRUE;
 
 	//	setup the public RSA key template
 	CK_ATTRIBUTE pub_template[] = {
 	  {CKA_CLASS, 			&pub_class, 	sizeof(pub_class)},
 	  {CKA_KEY_TYPE, 		&key_type, 		sizeof(key_type)},
 	  {CKA_TOKEN, 			&token, 		sizeof(token)},
-	  {CKA_PRIVATE, 		&private_, 		sizeof(private_)},
+	  {CKA_PRIVATE, 		&pub_private, 	sizeof(pub_private)},
 	  {CKA_MODIFIABLE, 		&modifiable, 	sizeof(modifiable)},
 	  {CKA_ENCRYPT, 		&encrypt, 		sizeof(encrypt)},
 	  {CKA_VERIFY, 			&verify, 		sizeof(verify)},
 	  {CKA_WRAP, 			&wrap, 			sizeof(wrap)},
 	  {CKA_MODULUS_BITS, 	&key_size, 		sizeof(key_size)},
 	  {CKA_PUBLIC_EXPONENT, pub_exp, 		pub_exp_len},
-	  {CKA_LABEL, 			pub_key_label, 	pub_key_label_len}
+	  {CKA_ID, 				&pub_id, 		pub_id_len},
+	  {CKA_LABEL, 			pub_label, 		pub_label_len}
 	};
 
 	//	setup the private RSA key template
@@ -452,15 +471,16 @@ CK_RV __gen_rsa_key_pair(CK_SESSION_HANDLE h_session, CK_ULONG key_size, CK_BYTE
 	  {CKA_CLASS, 			&pvt_class, 	sizeof(pvt_class)},
 	  {CKA_KEY_TYPE, 		&key_type, 		sizeof(key_type)},
 	  {CKA_TOKEN, 			&token, 		sizeof(token)},
-	  {CKA_SENSITIVE,		&bSensitive,   	sizeof(bSensitive)},  // default to TRUE (1)
-	  {CKA_PRIVATE, 		&private_, 		sizeof(private_)},
+	  {CKA_SENSITIVE,		&sensitive,   	sizeof(sensitive)},
+	  {CKA_PRIVATE, 		&pvt_private,	sizeof(pvt_private)},
 	  {CKA_MODIFIABLE, 		&modifiable, 	sizeof(modifiable)},
 	  {CKA_EXTRACTABLE, 	&extractable, 	sizeof(extractable)},
 	  {CKA_DECRYPT, 		&decrypt, 		sizeof(decrypt)},
 	  {CKA_SIGN, 			&sign, 			sizeof(sign)},
 	  {CKA_UNWRAP, 			&unwrap, 		sizeof(unwrap)},
 	  {CKA_DERIVE, 			&derive, 		sizeof(derive)},
-	  {CKA_LABEL, 			pvt_key_label, 	pvt_key_label_len}
+	  {CKA_ID, 				&pvt_id, 		pvt_id_len},
+	  {CKA_LABEL, 			pvt_label, 		pvt_label_len}
 	};
 
 	// create the pointers and set the size values
@@ -471,7 +491,7 @@ CK_RV __gen_rsa_key_pair(CK_SESSION_HANDLE h_session, CK_ULONG key_size, CK_BYTE
 
 	// generate the RSA key pair
 	rv = _p11->C_GenerateKeyPair(h_session, &mech, p_pub_template, pub_template_len,
-			p_pvt_template, pvt_template_len, h_pub_key, h_pvt_key);
+			p_pvt_template, pvt_template_len, h_pub, h_pvt);
 
    return rv;
 }
@@ -479,19 +499,25 @@ CK_RV __gen_rsa_key_pair(CK_SESSION_HANDLE h_session, CK_ULONG key_size, CK_BYTE
 //----------------------------------------------------------------------------------------
 // __gen_ec_key_pair()
 //	Generates a ECDSA key pair on HSM.  Curve specifics are defined by the ASN.1
-//	DER encoded bit string derParams byte array.  CKA_SENSITIVE is always set to TRUE (1)
+//	DER encoded bit string derParams byte array.
 //  for private key which instructs the HSM to do all key operations in hardware.
 //
 //	Parameters:
 //		h_session	 		-- a session handle for a logged in session.
 //		ec_params	 		-- byte string containing the ASN.1 DER encoded curve parameter data
 //		ec_params_len		-- length of derParams
-//		pub_key_label 		-- public key label
-//		pub_key_label_len	-- public key label length
-//		pvt_key_label		-- private key label
-//		pvt_key_label_len	-- private key label length
+//		pub_label 			-- public key label
+//		pub_label_len		-- public key label length
+//		pvt_label			-- private key label
+//		pvt_label_len		-- private key label length
+//		pub_id				-- public key ID value
+//		pub_id_len			-- length of public key ID value
+//		pvt_id				-- private key ID value
+//		pvt_id_len			-- length of private key ID value
 //		token				-- 1 to indicate the keys exist on the token and not the session; otherwise 0
-//		private				-- 1 to indicate the keys are private and can only be accessed after authentication; otherwise 0
+//		pub_private 		-- 1 to indicate the public key is marked private and can only be accessed after authentication; otherwise 0
+//		pvt_private 		-- 1 to indicate the private key is marked private and can only be accessed after authentication; otherwise 0
+//		sensitive	    	-- 1 to indicate the private key is sensitive; otherwise 0
 //		modifiable			-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable		 	-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign				-- 1 to indicate the private key can sign; otherwise 0
@@ -510,8 +536,9 @@ CK_RV __gen_rsa_key_pair(CK_SESSION_HANDLE h_session, CK_ULONG key_size, CK_BYTE
 //----------------------------------------------------------------------------------------
 
 CK_RV __gen_ec_key_pair(CK_SESSION_HANDLE h_session, CK_BYTE_PTR ec_params, CK_ULONG ec_params_len,
-					 CK_CHAR_PTR pub_key_label, CK_ULONG pub_key_label_len, CK_CHAR_PTR pvt_key_label, CK_ULONG pvt_key_label_len,
-					 CK_BBOOL token, CK_BBOOL private_, CK_BBOOL modifable, CK_BBOOL extractable, CK_BBOOL sign,
+					 CK_CHAR_PTR pub_label, CK_ULONG pub_label_len, CK_CHAR_PTR pvt_label, CK_ULONG pvt_label_len,
+					 CK_BYTE_PTR pub_id, CK_ULONG pub_id_len, CK_BYTE_PTR pvt_id, CK_ULONG pvt_id_len,
+					 CK_BBOOL token, CK_BBOOL pub_private, CK_BBOOL pvt_private, CK_BBOOL sensitive, CK_BBOOL modifable, CK_BBOOL extractable, CK_BBOOL sign,
 					 CK_BBOOL verify, CK_BBOOL encrypt, CK_BBOOL decrypt, CK_BBOOL wrap, CK_BBOOL unwrap, CK_BBOOL derive,
 					 CK_OBJECT_HANDLE_PTR h_pub_key, CK_OBJECT_HANDLE_PTR h_pvt_key)
 {
@@ -523,40 +550,41 @@ CK_RV __gen_ec_key_pair(CK_SESSION_HANDLE h_session, CK_BYTE_PTR ec_params, CK_U
 
 	CK_ATTRIBUTE_PTR p_pub_template;
 	CK_ATTRIBUTE_PTR p_pvt_template;
-	CK_BBOOL sensitive = TRUE;
 
 	// create the EC public key template
-	CK_ATTRIBUTE ECPubTemplate[] = {
+	CK_ATTRIBUTE pub_template[] = {
 	  {CKA_TOKEN, 			&token, 		sizeof(token)},
-	  {CKA_PRIVATE, 		&private_, 		sizeof(private_)},
+	  {CKA_PRIVATE, 		&pub_private, 	sizeof(pub_private)},
 	  {CKA_VERIFY, 			&verify, 		sizeof(verify)},
 	  {CKA_DERIVE, 			&derive, 		sizeof(derive)},
 	  {CKA_MODIFIABLE, 		&modifable, 	sizeof(modifable)},
 	  {CKA_ENCRYPT, 		&encrypt, 		sizeof(encrypt)},
 	  {CKA_WRAP, 			&wrap, 			sizeof(wrap)},
-	  {CKA_ECDSA_PARAMS, 	ec_params, 		ec_params_len},
-	  {CKA_LABEL, 			pub_key_label, 	pub_key_label_len}
+	  {CKA_EC_PARAMS, 		ec_params, 		ec_params_len},
+	  {CKA_ID, 				&pub_id, 		pub_id_len},
+	  {CKA_LABEL, 			pub_label, 		pub_label_len}
 	};
 
 	// create the EC private key template
-	CK_ATTRIBUTE ECPriTemplate[] = {
+	CK_ATTRIBUTE pvt_template[] = {
 	  {CKA_TOKEN, 			&token,			sizeof(token)},
-	  {CKA_SENSITIVE,		&sensitive,   	sizeof(sensitive)},  // default to TRUE (1)
-	  {CKA_PRIVATE, 		&private_, 		sizeof(private_)},
+	  {CKA_SENSITIVE,		&sensitive,   	sizeof(sensitive)},
+	  {CKA_PRIVATE, 		&pvt_private,	sizeof(pvt_private)},
 	  {CKA_SIGN, 			&sign, 			sizeof(sign)},
 	  {CKA_DERIVE, 			&derive, 		sizeof(derive)},
 	  {CKA_EXTRACTABLE, 	&extractable, 	sizeof(extractable)},
 	  {CKA_MODIFIABLE, 		&modifable, 	sizeof(modifable)},
 	  {CKA_DECRYPT, 		&decrypt, 		sizeof(decrypt)},
 	  {CKA_UNWRAP, 			&unwrap, 		sizeof(unwrap)},
-	  {CKA_LABEL, 			pvt_key_label, 	pvt_key_label_len}
+	  {CKA_ID, 				&pvt_id, 		pvt_id_len},
+	  {CKA_LABEL, 			pvt_label, 		pvt_label_len},
 	};
 
 	// create the pointers and set the size values
-	p_pub_template = ECPubTemplate;
-	pub_template_len = DIM(ECPubTemplate);
-	p_pvt_template = ECPriTemplate;
-	pvt_template_len = DIM(ECPriTemplate);
+	p_pub_template = pub_template;
+	pub_template_len = DIM(pub_template);
+	p_pvt_template = pvt_template;
+	pvt_template_len = DIM(pvt_template);
 
 	// call PKCS-11 API to generate the EC key pair on the HSM
 	rv = _p11->C_GenerateKeyPair(h_session, &mech, p_pub_template, pub_template_len, p_pvt_template, pvt_template_len,
@@ -568,16 +596,20 @@ CK_RV __gen_ec_key_pair(CK_SESSION_HANDLE h_session, CK_BYTE_PTR ec_params, CK_U
 
 //----------------------------------------------------------------------------------------
 //  __gen_secret_key()
-//	Generates a new secret symmetrical key on HSM.  CKA_SENSITIVE is always set to TRUE (1)
+//	Generates a new secret symmetrical key on HSM.
 //  which instructs the HSM to do all key operations in hardware.
 //
 //	Parameters:
 //		h_session		-- a session handle for a logged in session
 //		key_label		-- label of the new key
+//		key_label_len	-- length of key label
+//		key_id			-- id of the new key
+//		key_id_len		-- length of key id
 //		mech_type	 	-- mechanism type of the key (CKM_DES_KEY_GEN, CKM_AES_KEY_GEN, ect)
 //		key_size		-- size of the key to create in bits
 //		token			-- 1 to indicate the keys exist on the token and not the session; otherwise 0
 //		private			-- 1 to indicate the keys are private and can only be accessed after authentication; otherwise 0
+//		sensitive	    -- 1 to indicate the private key is sensitive; otherwise 0
 //		modifiable		-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable		-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign			-- 1 to indicate the private key can sign; otherwise 0
@@ -594,8 +626,10 @@ CK_RV __gen_ec_key_pair(CK_SESSION_HANDLE h_session, CK_BYTE_PTR ec_params, CK_U
 //
 //----------------------------------------------------------------------------------------
 
-CK_RV __gen_secret_key(CK_SESSION_HANDLE h_session, CK_CHAR_PTR key_label, CK_ULONG key_label_len, CK_MECHANISM_TYPE mech_type, CK_ULONG key_size,
-					 CK_BBOOL token, CK_BBOOL private_, CK_BBOOL modifiable, CK_BBOOL extractable, CK_BBOOL sign,
+CK_RV __gen_secret_key(CK_SESSION_HANDLE h_session,
+					 CK_CHAR_PTR key_label, CK_ULONG key_label_len, CK_CHAR_PTR key_id, CK_ULONG key_id_len,
+					 CK_MECHANISM_TYPE mech_type, CK_ULONG key_size,
+					 CK_BBOOL token, CK_BBOOL private_, CK_BBOOL sensitive, CK_BBOOL modifiable, CK_BBOOL extractable, CK_BBOOL sign,
 					 CK_BBOOL verify, CK_BBOOL encrypt, CK_BBOOL decrypt, CK_BBOOL wrap, CK_BBOOL unwrap, CK_BBOOL derive,
 					 CK_OBJECT_HANDLE_PTR h_key)
 {
@@ -609,12 +643,11 @@ CK_RV __gen_secret_key(CK_SESSION_HANDLE h_session, CK_CHAR_PTR key_label, CK_UL
 
 	// convert bits to bytes for the P11 API which expects key size in bytes
 	CK_ULONG bytes_key_size = key_size / 8;
-	CK_BBOOL sensitive = TRUE;
 
-	CK_ATTRIBUTE keyTemplate[] = {
+	CK_ATTRIBUTE secret_template[] = {
 	  {CKA_CLASS,		&key_class,		sizeof(key_class)},
 	  {CKA_TOKEN,		&token,			sizeof(token)},
-	  {CKA_SENSITIVE,	&sensitive,   	sizeof(sensitive)},  // always default to TRUE (1)
+	  {CKA_SENSITIVE,	&sensitive,   	sizeof(sensitive)},
 	  {CKA_PRIVATE,		&private_,		sizeof(private_)},
 	  {CKA_ENCRYPT,		&encrypt,		sizeof(encrypt)},
 	  {CKA_DECRYPT,		&decrypt,		sizeof(decrypt)},
@@ -626,12 +659,13 @@ CK_RV __gen_secret_key(CK_SESSION_HANDLE h_session, CK_CHAR_PTR key_label, CK_UL
 	  {CKA_MODIFIABLE,	&modifiable,	sizeof(modifiable)},
 	  {CKA_EXTRACTABLE,	&extractable,	sizeof(extractable)},
 	  {CKA_VALUE_LEN,	&bytes_key_size,sizeof(bytes_key_size)},
+	  {CKA_ID,			key_id,			key_id_len},
 	  {CKA_LABEL,		key_label,		key_label_len}
 	};
 
 	// create the pointers and set the size values
-	p_template = keyTemplate;
-	template_size = DIM(keyTemplate);
+	p_template = secret_template;
+	template_size = DIM(secret_template);
 
 	// call PKCS-11 API to generate the symmetric key
 	rv = _p11->C_GenerateKey(h_session, &mech, p_template, template_size, h_key);
@@ -688,7 +722,7 @@ void __destroy_object(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE hKey)
 //		FALSE if an error occurs otherwise TRUE
 //
 //----------------------------------------------------------------------------------------
-CK_RV __get_modulus(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_key, char *mod_buf, int* mod_buf_len)
+CK_RV __get_modulus(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_key, unsigned char *mod_buf, unsigned long* mod_buf_len)
 {
 
 	// setup the attribute template
@@ -696,13 +730,11 @@ CK_RV __get_modulus(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_key, char *m
 			{CKA_MODULUS, NULL_PTR, 0},
 			{CKA_PUBLIC_EXPONENT, NULL_PTR, 0} };
 
-	// this cast might not be valid - it is the result of a (*__w64) error coming from the compiler
-	CK_ATTRIBUTE_PTR p_attrib_template = (CK_ATTRIBUTE_PTR)&attrib_template;
 	CK_RV rv = CKR_OK;
 
 	// call the first time with a null pointer in order to get the length of the
-	// data we need to extract - this is a really weird design
-	rv = _p11->C_GetAttributeValue(h_session, h_key, p_attrib_template, 2);
+	// data we need to extract - this is common in pure C APIs
+	rv = _p11->C_GetAttributeValue(h_session, h_key, attrib_template, 2);
 	if (rv != CKR_OK)
 	{
 		return rv;
@@ -717,7 +749,7 @@ CK_RV __get_modulus(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_key, char *m
 	attrib_template[1].pValue = p_exponent;
 
 	// call C_GetAttributeValue again and this time get our values for modulus and exponent
-	rv = _p11->C_GetAttributeValue(h_session, h_key, p_attrib_template, 2);
+	rv = _p11->C_GetAttributeValue(h_session, h_key, attrib_template, 2);
 	if (rv != CKR_OK)
 	{
 		// free the memory we allocated
@@ -755,7 +787,7 @@ CK_RV __get_modulus(CK_SESSION_HANDLE h_session, CK_OBJECT_HANDLE h_key, char *m
 //		msg_buf_len			--	byte length of provided error message buffer
 //		version_info_len	--  byte length of versionInfo buffer (minimum 15 bytes)
 //----------------------------------------------------------------------------------------
-int get_lib_version(char* msg_buf, int msg_buf_len, char *version_info, int version_info_len)
+int get_lib_version(char* msg_buf, unsigned long msg_buf_len, char *version_info, unsigned long version_info_len)
 {
 
 	if (!version_info)
@@ -792,7 +824,7 @@ int get_lib_version(char* msg_buf, int msg_buf_len, char *version_info, int vers
 //		lib_path_len -- length of library path
 //
 //----------------------------------------------------------------------------------------
-int connect(char* msg_buf, int msg_buf_len, char* lib_path, int lib_path_len)
+int connect(char* msg_buf, unsigned long msg_buf_len, char* lib_path, unsigned long lib_path_len)
 {
 
 	if (!lib_path || lib_path_len <= 0)
@@ -830,7 +862,7 @@ int connect(char* msg_buf, int msg_buf_len, char* lib_path, int lib_path_len)
 //	Inputs:
 //		msg_buf_len	-- byte length of provided error message buffer
 //----------------------------------------------------------------------------------------
-int disconnect(char* msg_buf, int msg_buf_len)
+int disconnect(char* msg_buf, unsigned long msg_buf_len)
 {
 	// connect to the target PKCS-11 client shared library
 	if( __close_p11_library() == CK_FALSE )
@@ -855,14 +887,14 @@ int disconnect(char* msg_buf, int msg_buf_len)
 //	Inputs:
 //		msg_buf_len	--	byte length of provided error message buffer
 //----------------------------------------------------------------------------------------
-int initialize(char* msg_buf, int msg_buf_len)
+int initialize(char* msg_buf, unsigned long msg_buf_len)
 {
 	CK_RV rv = CKR_OK;
 
 	rv = _p11->C_Initialize(NULL_PTR);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "initialize: PKCS#11 C_Initialize() reports an error %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "initialize: PKCS#11 C_Initialize() reports an error %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -883,7 +915,7 @@ int initialize(char* msg_buf, int msg_buf_len)
 //	Inputs:
 //		msg_buf_len	-- byte length of provided error message buffer
 //----------------------------------------------------------------------------------------
-int finalize(char* msg_buf, int msg_buf_len)
+int finalize(char* msg_buf, unsigned long msg_buf_len)
 {
 	CK_RV rv = CKR_OK;
 
@@ -898,7 +930,7 @@ int finalize(char* msg_buf, int msg_buf_len)
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "finalize: PKCS#11 C_Finalize failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "finalize: PKCS#11 C_Finalize failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -934,7 +966,7 @@ int finalize(char* msg_buf, int msg_buf_len)
 //																  this flag must be set if the Login CK_USER_TYPE is a CKU_SO
 //
 //----------------------------------------------------------------------------------------
-int open_session(char* msg_buf, int msg_buf_len, int slot, int flags, int *h_session)
+int open_session(char* msg_buf, unsigned long msg_buf_len, unsigned long slot, unsigned long flags, unsigned long* h_session)
 {
 
 	if (slot < 0)
@@ -946,10 +978,10 @@ int open_session(char* msg_buf, int msg_buf_len, int slot, int flags, int *h_ses
 	// always set the CKF_SERIAL_SESSION flag (legacy flag required by all modern HSM P11 APIs)
 	flags |= CKF_SERIAL_SESSION;
 	CK_SESSION_HANDLE handle = -1;
-	CK_RV rv = _p11->C_OpenSession(slot, (CK_FLAGS)flags, NULL, NULL, &handle);
+	CK_RV rv = _p11->C_OpenSession(slot, flags, NULL, NULL, &handle);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "open_session: PKCS#11 C_OpenSession on slot %d failed with return value %d.", slot, (int)rv);
+		snprintf(msg_buf, msg_buf_len, "open_session: PKCS#11 C_OpenSession on slot %lu failed with return value %lu.", slot, rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -974,12 +1006,12 @@ int open_session(char* msg_buf, int msg_buf_len, int slot, int flags, int *h_ses
 //		msg_buf_len		-- byte length of provided error message buffer
 //		h_session		-- session handle to close
 //----------------------------------------------------------------------------------------
-int close_session(char* msg_buf, int msg_buf_len, int h_session)
+int close_session(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session)
 {
 	CK_RV rv = _p11->C_CloseSession(h_session);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "close_session: PKCS#11 C_CloseSession failed with return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "close_session: PKCS#11 C_CloseSession failed with return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1001,12 +1033,12 @@ int close_session(char* msg_buf, int msg_buf_len, int h_session)
 //		msg_buf_len		-- byte length of provided error message buffer
 //		slotId			-- ID of the slot to close all sessions on
 //----------------------------------------------------------------------------------------
-int close_all_sessions(char* msg_buf, int msg_buf_len, int slot_id)
+int close_all_sessions(char* msg_buf, unsigned long msg_buf_len, unsigned long slot_id)
 {
 	CK_RV rv = _p11->C_CloseAllSessions(slot_id);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "close_all_sessions: PKCS#11 C_CloseAllSessions failed with return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "close_all_sessions: PKCS#11 C_CloseAllSessions failed with return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1032,14 +1064,14 @@ int close_all_sessions(char* msg_buf, int msg_buf_len, int slot_id)
 //		user_pin		--  user PIN number
 //      user_pin_len	--  length of user PIN
 //----------------------------------------------------------------------------------------
-int login(char* msg_buf, int msg_buf_len, int h_session, int user_type, char* user_pin, int user_pin_len)
+int login(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long user_type, unsigned char* user_pin, unsigned long user_pin_len)
 {
 	CK_RV rv = 0;
 
-	rv = _p11->C_Login(h_session, user_type, (unsigned char*)user_pin, user_pin_len);
+	rv = _p11->C_Login(h_session, user_type, user_pin, user_pin_len);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "login: PCKS#11 C_Login failed; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "login: PCKS#11 C_Login failed; return value %lu.", rv);
    		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1062,14 +1094,14 @@ int login(char* msg_buf, int msg_buf_len, int h_session, int user_type, char* us
 //		msg_buf_len		-- byte length of provided error message buffer.
 //		h_session		-- active session handle
 //----------------------------------------------------------------------------------------
-int logout(char* msg_buf, int msg_buf_len, int h_session)
+int logout(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session)
 {
 	CK_RV rv = 0;
 
 	rv = _p11->C_Logout(h_session);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "logout: PKCS#11 C_Logout failed; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "logout: PKCS#11 C_Logout failed; return value %lu.", rv);
    		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1096,7 +1128,7 @@ int logout(char* msg_buf, int msg_buf_len, int h_session)
 //		new_pin			--  new user PIN
 //		new_pin_len		--  new user PIN length
 //----------------------------------------------------------------------------------------
-int set_pin(char* msg_buf, int msg_buf_len, int h_session, char* old_pin, int old_pin_len, char* new_pin, int new_pin_len)
+int set_pin(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* old_pin, unsigned long old_pin_len, unsigned char* new_pin, unsigned long new_pin_len)
 {
 	if (!h_session)
 	{
@@ -1106,10 +1138,10 @@ int set_pin(char* msg_buf, int msg_buf_len, int h_session, char* old_pin, int ol
 
 	CK_RV rv = 0;
 
-	rv = _p11->C_SetPIN(h_session, (CK_CHAR_PTR)old_pin, old_pin_len, (CK_CHAR_PTR)new_pin, new_pin_len);
+	rv = _p11->C_SetPIN(h_session, old_pin, old_pin_len, new_pin, new_pin_len);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "set_pin: PKCS#11 C_SetPIN failed; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "set_pin: PKCS#11 C_SetPIN failed; return value %lu.", rv);
    		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1135,7 +1167,7 @@ int set_pin(char* msg_buf, int msg_buf_len, int h_session, char* old_pin, int ol
 //		h_session				--	handle of an open session with the HSM.
 //
 //----------------------------------------------------------------------------------------
-int find_objects(char* msg_buf, int msg_buf_len, int h_session, int* h_object_array, int* h_object_array_len)
+int find_objects(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long* h_object_array, unsigned long* h_object_array_len)
 {
 
 	if (!h_session)
@@ -1159,7 +1191,7 @@ int find_objects(char* msg_buf, int msg_buf_len, int h_session, int* h_object_ar
 	CK_OBJECT_HANDLE h_object;
 	CK_ULONG count = 0;
 	CK_RV rv = 0;
-	int idx = 0;
+	unsigned long idx = 0;
 
 	rv = _p11->C_FindObjectsInit(h_session, NULL_PTR, 0);
 
@@ -1168,7 +1200,7 @@ int find_objects(char* msg_buf, int msg_buf_len, int h_session, int* h_object_ar
 		rv = _p11->C_FindObjects(h_session, &h_object, 1, &count);
 		if (rv != CKR_OK)
 		{
-			snprintf(msg_buf, msg_buf_len, "find_objects: PKCS#11 C_FindObjects for h_session %d failed with return value %d.", (int)h_session, (int)rv);
+			snprintf(msg_buf, msg_buf_len, "find_objects: PKCS#11 C_FindObjects for h_session %lu failed with return value %lu.", h_session, rv);
 			__append_return_code(rv, msg_buf, msg_buf_len);
 			_p11->C_FindObjectsFinal(h_session);
 			return FALSE;
@@ -1194,7 +1226,7 @@ int find_objects(char* msg_buf, int msg_buf_len, int h_session, int* h_object_ar
 	rv = _p11->C_FindObjectsFinal(h_session);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "find_objects: PKCS#11 C_FindObjectsFinal for h_session %d failed with return value %d.", (int)h_session, (int)rv);
+		snprintf(msg_buf, msg_buf_len, "find_objects: PKCS#11 C_FindObjectsFinal for h_session %lu failed with return value %lu.", h_session, rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1219,7 +1251,7 @@ int find_objects(char* msg_buf, int msg_buf_len, int h_session, int* h_object_ar
 //		object_label_len	--	length of object label
 //		h_session			--	handle of an open session with the HSM
 //----------------------------------------------------------------------------------------
-int get_object_handle(char* msg_buf, int msg_buf_len, int h_session, char* object_label, int object_label_len, int* h_object)
+int get_object_handle(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* object_label, unsigned long object_label_len, unsigned long* h_object)
 {
 
 	if (!object_label)
@@ -1244,7 +1276,7 @@ int get_object_handle(char* msg_buf, int msg_buf_len, int h_session, char* objec
 	CK_CHAR label[50];
 	label[object_label_len] = '\0';
 	memcpy(label, object_label, object_label_len);
-	CK_ATTRIBUTE findTemplate = { CKA_LABEL, label, (CK_ULONG)object_label_len};
+	CK_ATTRIBUTE findTemplate = { CKA_LABEL, label, object_label_len};
 	CK_ULONG found_count = 0;
 	CK_OBJECT_HANDLE handle[1];
 	handle[0] = 0;
@@ -1252,7 +1284,7 @@ int get_object_handle(char* msg_buf, int msg_buf_len, int h_session, char* objec
 	rv = _p11->C_FindObjectsInit(h_session, &findTemplate, 1);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_object_handle: PKCS#11 C_FindObjectsInit for h_session %d failed.", (int)h_session);
+		snprintf(msg_buf, msg_buf_len, "get_object_handle: PKCS#11 C_FindObjectsInit for h_session %lu failed.", h_session);
 	 	 __append_return_code(rv, msg_buf, msg_buf_len);
 		 return FALSE;
 	}
@@ -1260,7 +1292,7 @@ int get_object_handle(char* msg_buf, int msg_buf_len, int h_session, char* objec
 	rv = _p11->C_FindObjects(h_session, handle, 1, &found_count );
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_object_handle: PKCS#11 C_FindObjects for h_session %d failed.", (int)h_session);
+		snprintf(msg_buf, msg_buf_len, "get_object_handle: PKCS#11 C_FindObjects for h_session %lu failed.", h_session);
 	 	 __append_return_code(rv, msg_buf, msg_buf_len);
 		 return FALSE;
 	}
@@ -1268,7 +1300,7 @@ int get_object_handle(char* msg_buf, int msg_buf_len, int h_session, char* objec
 	rv = _p11->C_FindObjectsFinal(h_session);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_object_handle: PKCS#11 C_FindObjectsFinal for h_session %d failed.", (int)h_session);
+		snprintf(msg_buf, msg_buf_len, "get_object_handle: PKCS#11 C_FindObjectsFinal for h_session %lu failed.", h_session);
 	 	 __append_return_code(rv, msg_buf, msg_buf_len);
 		 return FALSE;
 	}
@@ -1296,12 +1328,12 @@ int get_object_handle(char* msg_buf, int msg_buf_len, int h_session, char* objec
 //		data_buf				 --	buffer containing data to be signed
 //		data_buf_len			 --	byte length of data to be signed
 //		h_key					 --	handle of key to be used for signing
-//		mech_type  					 -- mechanism type of the signing algorithm
+//		mech_type  				 -- mechanism type of the signing algorithm
 //		salt_len				 -- optional salt length value (required for PSS signatures)
 //		h_session				 --	handle of an open session with the HSM
 //----------------------------------------------------------------------------------------
-int sign(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data_buf_len,
-					int h_key, int mech_type, int salt_len, char* sig_buf, int* sig_buf_len)
+int sign(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* data_buf, unsigned long data_buf_len,
+ 		 unsigned long h_key, unsigned long mech_type, unsigned long salt_len, unsigned char* sig_buf, unsigned long* sig_buf_len)
 {
 	CK_RV rv = 0;
     CK_RSA_PKCS_PSS_PARAMS pssParams;
@@ -1348,7 +1380,7 @@ int sign(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data
     }
 
 	// define the HSM signing mechanism
-	CK_MECHANISM mech = { (CK_MECHANISM_TYPE)mech_type, NULL_PTR, 0 };
+	CK_MECHANISM mech = { mech_type, NULL_PTR, 0 };
 
     if( use_pss == TRUE )
     {
@@ -1361,16 +1393,16 @@ int sign(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data
 	rv = _p11->C_SignInit(h_session, &mech, h_key);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "sign: PKCS#11 C_SignInit failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "sign: PKCS#11 C_SignInit failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
 
 	// On input, sig_buf_len is size of buffer signatureBuf; on output, it is size of content.
-	rv = _p11->C_Sign(h_session, (CK_BYTE_PTR)data_buf, data_buf_len, (CK_BYTE_PTR)sig_buf, (CK_ULONG_PTR)sig_buf_len);
+	rv = _p11->C_Sign(h_session, data_buf, data_buf_len, sig_buf, sig_buf_len);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "sign: PKCS#11 C_Sign failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "sign: PKCS#11 C_Sign failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1396,13 +1428,13 @@ int sign(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data
 //		data_buf_len			--	byte length of data buffer
 //		h_key					--	handle of key to be used for verifying
 //		mech_type  				--  mechanism type of the verification algorithm
-//		salt_len				-- optional salt length value (required for PSS signatures)
+//		salt_len				--  optional salt length value (required for PSS signatures)
 //		sig_buf					--	buffer to contain signature
 //		sig_buf_Len				--	byte length of signature buffer
 //
 //----------------------------------------------------------------------------------------
-int verify(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data_buf_len, int h_key,
-					 int mech_type, int salt_len, char* sig_buf, int sig_buf_len)
+int verify(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* data_buf, unsigned long data_buf_len, unsigned long h_key,
+		   unsigned long mech_type, unsigned long salt_len, unsigned char* sig_buf, unsigned long sig_buf_len)
 {
 	CK_RV rv = 0;
     CK_RSA_PKCS_PSS_PARAMS pssParams;
@@ -1437,7 +1469,7 @@ int verify(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int da
     }
 
 	// define the HSM signing mechanism
-	CK_MECHANISM sigMechanism = { (CK_MECHANISM_TYPE)mech_type, NULL_PTR, 0 };
+	CK_MECHANISM sigMechanism = { mech_type, NULL_PTR, 0 };
 
     if( use_pss == TRUE )
     {
@@ -1450,16 +1482,16 @@ int verify(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int da
 	rv = _p11->C_VerifyInit(h_session, &sigMechanism, h_key);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "verify: PKCS#11 C_VerifyInit failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "verify: PKCS#11 C_VerifyInit failed with return code %lu", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
 
 	// sign the data using the specific key on the HSM and the initialized signing mechanism
-	rv = _p11->C_Verify(h_session, (CK_BYTE_PTR)data_buf, data_buf_len, (CK_BYTE_PTR)sig_buf, sig_buf_len);
+	rv = _p11->C_Verify(h_session, data_buf, data_buf_len, sig_buf, sig_buf_len);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "verify: PKCS#11 C_Verify failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "verify: PKCS#11 C_Verify failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1491,9 +1523,9 @@ int verify(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int da
 //		iv_len					--  encryption initialization vector length
 //----------------------------------------------------------------------------------------
 //
-int encrypt(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data_buf_len,
-						int h_key, int mech_type, char* iv, int iv_len,
-						char* encrypted_data_buf, int* encrypted_data_buf_len)
+int encrypt(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* data_buf, unsigned long data_buf_len,
+  		    unsigned long h_key, unsigned long mech_type, unsigned char* iv, unsigned long iv_len,
+			unsigned char* encrypted_data_buf, unsigned long* encrypted_data_buf_len)
 {
 	CK_RV rv = 0;
 
@@ -1540,7 +1572,7 @@ int encrypt(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int d
 	}
 
 	// create the encryption mechanism
-	CK_MECHANISM mech = { (CK_MECHANISM_TYPE)mech_type, (CK_VOID_PTR)iv, (CK_ULONG)iv_len };
+	CK_MECHANISM mech = { mech_type, iv, iv_len };
 
 	CK_RSA_PKCS_OAEP_PARAMS oaep;
 	memset(&oaep, 0, sizeof(oaep));
@@ -1562,18 +1594,17 @@ int encrypt(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int d
 	rv = _p11->C_EncryptInit(h_session, &mech, h_key);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "encrypt: PKCS#11 C_EncryptInit failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "encrypt: PKCS#11 C_EncryptInit failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
 
-	// on input, encryptedDataBufLen is size of buffer encryptedDataBuf; on output, it is size of content.
-	rv = _p11->C_Encrypt(h_session, (CK_BYTE_PTR)data_buf, data_buf_len,
-			(CK_BYTE_PTR)encrypted_data_buf, (CK_ULONG_PTR)encrypted_data_buf_len);
+	// on input, encrypted_data_buf_len is size of buffer encrypted_data_buf; on output, it is size of content.
+	rv = _p11->C_Encrypt(h_session, data_buf, data_buf_len, encrypted_data_buf, encrypted_data_buf_len);
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "encrypt: PKCS#11 C_Encrypt failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "encrypt: PKCS#11 C_Encrypt failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1605,10 +1636,10 @@ int encrypt(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int d
 //		iv_len					--  initialization vector length
 //----------------------------------------------------------------------------------------
 //
-int decrypt(char* msg_buf, int msg_buf_len, int h_session,
-						char* data_buf, int data_buf_len, int h_key,
-						int mech_type, char* iv, int iv_len,
-						char* decrypted_data_buf, int* decrypted_data_buf_len)
+int decrypt(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* data_buf, unsigned long data_buf_len, unsigned long h_key,
+		unsigned long mech_type, unsigned char* iv, unsigned long iv_len,
+		unsigned char* decrypted_data_buf, unsigned long* decrypted_data_buf_len)
 {
 	CK_RV rv = 0;
 
@@ -1655,7 +1686,7 @@ int decrypt(char* msg_buf, int msg_buf_len, int h_session,
 	}
 
 	// create the decryption mechanism
-	CK_MECHANISM mech = { (CK_MECHANISM_TYPE)mech_type, (CK_VOID_PTR)iv, (CK_ULONG)iv_len };
+	CK_MECHANISM mech = { mech_type, iv, iv_len };
 
 	CK_RSA_PKCS_OAEP_PARAMS oaep;
 	memset(&oaep, 0, sizeof(oaep));
@@ -1677,18 +1708,17 @@ int decrypt(char* msg_buf, int msg_buf_len, int h_session,
 	rv = _p11->C_DecryptInit(h_session, &mech, h_key);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "decrypt: PKCS#11 C_DecryptInit failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "decrypt: PKCS#11 C_DecryptInit failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
 
-	// on input, decryptedDataBufLen is size of buffer decryptedDataBuf; on output, it is size of content.
-	rv = _p11->C_Decrypt(h_session, (CK_BYTE_PTR)data_buf, data_buf_len,
-			(CK_BYTE_PTR)decrypted_data_buf, (CK_ULONG_PTR)decrypted_data_buf_len);
+	// on input, decrypted_data_buf_len is size of buffer decrypted_data_buf; on output, it is size of content.
+	rv = _p11->C_Decrypt(h_session, data_buf, data_buf_len, decrypted_data_buf, decrypted_data_buf_len);
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "decrypt: PKCS#11 C_Decrypt failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "decrypt: PKCS#11 C_Decrypt failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1707,7 +1737,7 @@ int decrypt(char* msg_buf, int msg_buf_len, int h_session,
 //		msg_buf					--	contains error messages
 //		data_buf				--	buffer to contain digest (hashed) data
 //		data_buf_len			--	byte length of supplied buffer; on output, byte
-//									length of result in digestDataBuf
+//									length of result in digest_data_buf
 //	Inputs:
 //		msg_buf_len				--  length of the error message buffer
 //		h_session				--	handle of an open session with the HSM.
@@ -1716,8 +1746,8 @@ int decrypt(char* msg_buf, int msg_buf_len, int h_session,
 //		mech_type				--  algorithm to be used to digest the data (e.g. CKM_SHA256, CKM_SHA512, etc)
 //----------------------------------------------------------------------------------------
 //
-int digest(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data_buf_len,
-					int mech_type, char* digest_data_buf, int* digest_data_buf_len)
+int digest(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* data_buf, unsigned long data_buf_len,
+		unsigned long mech_type, unsigned char* digest_data_buf, unsigned long* digest_data_buf_len)
 {
 	CK_RV rv = 0;
 
@@ -1757,24 +1787,23 @@ int digest(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int da
 	}
 
 	// create the Digestion mechanism
-	CK_MECHANISM mech = { (CK_MECHANISM_TYPE)mech_type, NULL_PTR, 0 };
+	CK_MECHANISM mech = { mech_type, NULL_PTR, 0 };
 
 	// initialize the HSM digest mechanism
 	rv = _p11->C_DigestInit(h_session, &mech);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "digest: PKCS#11 C_DigestInit failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "digest: PKCS#11 C_DigestInit failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
 
 	// on input, digest_data_buf_len is size of buffer digest_data_buf; on output, it is size of content.
-	rv = _p11->C_Digest(h_session, (CK_BYTE_PTR)data_buf, data_buf_len,
-			(CK_BYTE_PTR)digest_data_buf, (CK_ULONG_PTR)digest_data_buf_len);
+	rv = _p11->C_Digest(h_session, data_buf, data_buf_len, digest_data_buf, digest_data_buf_len);
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "Digest: PKCS#11 C_Digest failed with return code %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "Digest: PKCS#11 C_Digest failed with return code %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -1782,6 +1811,7 @@ int digest(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int da
 	return TRUE;
 }
 
+	// CK_BBOOL pub_private, CK_BBOOL pvt_private, CK_BBOOL sensitive
 
 //----------------------------------------------------------------------------------------
 // create_rsa_key_pair()
@@ -1803,10 +1833,20 @@ int digest(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int da
 //		pub_key_label_len			-- length of public key label
 //		pvt_key_label				-- label for the private key
 //		pvt_key_label_len			-- length of private key label
+//		pub_key_id					-- id for the public key
+//		pub_key_id_len				-- length of public key id
+//		pvt_key_id					-- id for the private key
+//		pvt_key_id_len				-- length of private key id
+//		mech_type				    -- mechanism type (usually CKM_RSA_X9_31_KEY_PAIR_GEN or CKM_RSA_PKCS_KEY_PAIR_GEN)
+// 						  		 	   Note: CKM_RSA_X9_31_KEY_PAIR_GEN is functionally identical to CKM_RSA_PKCS_KEY_PAIR_GEN
+//						   			   but provides stronger guarantee of p and q values as defined in X9.31
+// 									   Cavium HSMs only support the CKM_RSA_X9_31_KEY_PAIR_GEN mechanism
 //		pub_exp						-- byte array containing public exponent value
 //      pub_exp_len					-- length of the publicExp byte array
 //		token						-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
-//		private_					-- 1 to indicate the keys are private to the HSM and requires an authenticated session; otherwise 0
+//		pub_private 				-- 1 to indicate the public key is marked private and can only be accessed after authentication; otherwise 0
+//		pvt_private 				-- 1 to indicate the private key is marked private and can only be accessed after authentication; otherwise 0
+//		sensitive	    			-- 1 to indicate the private key is sensitive; otherwise 0
 //	    modifiable					-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable					-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign						-- 1 to indicate the private key can sign; otherwise 0
@@ -1819,12 +1859,12 @@ int digest(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int da
 //		overwrite					-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
 //
 //----------------------------------------------------------------------------------------
-int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_size,
-						char* pub_key_label, int pub_key_label_len, char* pvt_key_label, int pvt_key_label_len,
-						char* pub_exp, int pub_exp_len,
-						int token, int private_, int modifiable, int extractable, int sign,
-						int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
-						int* h_pub_key, int* h_pvt_key)
+int create_rsa_key_pair(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long key_size,
+		unsigned char* pub_key_label, unsigned long pub_key_label_len, unsigned char* pvt_key_label, unsigned long pvt_key_label_len,
+		unsigned char* pub_key_id, unsigned long pub_key_id_len, unsigned char* pvt_key_id, unsigned long pvt_key_id_len,
+		unsigned long mech_type, unsigned char* pub_exp, unsigned long pub_exp_len, unsigned long token, unsigned long pub_private, unsigned long pvt_private, unsigned long sensitive,
+		unsigned long modifiable, unsigned long extractable, unsigned long sign, unsigned long verify, unsigned long encrypt, unsigned long decrypt,
+		unsigned long wrap, unsigned long unwrap, unsigned long derive, unsigned long overwrite, unsigned long* h_pub_key, unsigned long* h_pvt_key)
 {
 	CK_OBJECT_HANDLE h_pub = 0;
 	CK_OBJECT_HANDLE h_pvt = 0;
@@ -1894,7 +1934,7 @@ int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_s
 
 	// make sure that the public key label does not already exist on the HSM
 	// it will return a T/F depending on error conditions
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pub_key_label, pub_key_label_len, (int*)&h_pub);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pub_key_label, pub_key_label_len, &h_pub);
 	if (rv == FALSE)
 	{
 		return FALSE;
@@ -1923,7 +1963,7 @@ int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_s
 
 	// make sure that the private key label does not already exist on the HSM
 	// it will return a T/F depending on error conditions
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pvt_key_label, pvt_key_label_len, (int*)&h_pvt);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pvt_key_label, pvt_key_label_len, &h_pvt);
 	if (rv == FALSE)
 	{
 		return FALSE;
@@ -1955,14 +1995,21 @@ int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_s
 
 	rv = __gen_rsa_key_pair(h_session,
 						    key_size,
-						    (CK_BYTE_PTR)pub_exp,
+						    pub_exp,
 						    pub_exp_len,
-						    (CK_CHAR_PTR)pub_key_label,
+						    pub_key_label,
 						    pub_key_label_len,
-						    (CK_CHAR_PTR)pvt_key_label,
+						    pvt_key_label,
 						    pvt_key_label_len,
+							pub_key_id,
+							pub_key_id_len,
+							pvt_key_id,
+							pvt_key_id_len,
+							mech_type,
 						    token,
-						    private_,
+						    pub_private,
+							pvt_private,
+							sensitive,
 						    modifiable,
 						    extractable,
 						    sign,
@@ -1977,7 +2024,7 @@ int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_s
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "create_rsa_key_pair: __gen_rsa_key_pair failed with the return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "create_rsa_key_pair: __gen_rsa_key_pair failed with the return value %lu.", rv);
    		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2010,8 +2057,14 @@ int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_s
 //		pub_key_label_len			-- length of public key label
 //		pvt_key_label				-- label for the private key
 //		pvt_key_label_len			-- length of private key label
+//		pub_key_id					-- id for the public key
+//		pub_key_id_len				-- length of public key id
+//		pvt_key_id					-- id for the private key
+//		pvt_key_id_len				-- length of private key id
 //		token						-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
-//		private_					-- 1 to indicate the keys are private to the HSM and require an auth session; otherwise 0
+//		pub_private 				-- 1 to indicate the public key is marked private and can only be accessed after authentication; otherwise 0
+//		pvt_private 				-- 1 to indicate the private key is marked private and can only be accessed after authentication; otherwise 0
+//		sensitive	    			-- 1 to indicate the private key is sensitive; otherwise 0
 //	    modifiable					-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable					-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign						-- 1 to indicate the private key can sign; otherwise 0
@@ -2021,15 +2074,17 @@ int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_s
 //		wrap						-- 1 to indicate the public key can wrap; otherwise 0
 //		unwrap						-- 1 to indicate the private key can unwrap; otherwise 0
 //		derive						-- 1 to indicate the private key can be used to drive other keys; otherwise 0
-//		overwrite					-- 1 to indicate the an existing key pair with the same label name can be overwriten; otherwise 0
+//		overwrite					-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
 //
 //----------------------------------------------------------------------------------------
-int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
-								char* ec_params,  int ec_params_len, char* pub_key_label,
-								int pub_key_label_len, char* pvt_key_label, int pvt_key_label_len,
-								int token, int private_, int modifiable, int extractable, int sign,
-								int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
-								int* h_pub_key, int* h_pvt_key)
+int create_ec_key_pair(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* ec_params, unsigned long ec_params_len,
+		unsigned char* pub_key_label, unsigned long pub_key_label_len, unsigned char* pvt_key_label, unsigned long pvt_key_label_len,
+		unsigned char* pub_key_id, unsigned long pub_key_id_len, unsigned char* pvt_key_id, unsigned long pvt_key_id_len,
+		unsigned long token, unsigned long pub_private, unsigned long pvt_private, unsigned long sensitive,
+		unsigned long modifiable, unsigned long extractable, unsigned long sign, unsigned long verify,
+		unsigned long encrypt, unsigned long decrypt, unsigned long wrap, unsigned long unwrap, unsigned long derive,
+		unsigned long overwrite, unsigned long* h_pub_key, unsigned long* h_pvt_key)
 {
 	CK_OBJECT_HANDLE h_pub = 0;
 	CK_OBJECT_HANDLE h_pvt = 0;
@@ -2100,7 +2155,7 @@ int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 
 	// make sure that the public key label does not already exist on the HSM
 	// it will return a T/F depending on error conditions
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pub_key_label, pub_key_label_len, (int*)&h_pub);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pub_key_label, pub_key_label_len, &h_pub);
 	if (rv == FALSE)
 	{
 		return FALSE;
@@ -2129,7 +2184,7 @@ int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 
 	// make sure that the private key label does not already exist on the HSM
 	// it will return a T/F depending on error conditions
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pvt_key_label, pvt_key_label_len, (int*)&h_pvt);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pvt_key_label, pvt_key_label_len, &h_pvt);
 	if (rv == FALSE)
 	{
 		return FALSE;
@@ -2161,29 +2216,35 @@ int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 
 	// setup templates and create the EC key pair on the HSM
 	rv = __gen_ec_key_pair(h_session,
-						  (CK_BYTE_PTR)ec_params,
-						  (CK_ULONG)ec_params_len,
-						  (CK_CHAR_PTR)pub_key_label,
-						  pub_key_label_len,
-						  (CK_CHAR_PTR)pvt_key_label,
-						  pvt_key_label_len,
-						  token,
-						  private_,
-						  modifiable,
-						  extractable,
-						  sign,
-						  verify,
-						  encrypt,
-						  decrypt,
-						  wrap,
-						  unwrap,
-						  derive,
-						  &h_new_pub,
-						  &h_new_pvt);
+						   ec_params,
+						   ec_params_len,
+						   pub_key_label,
+						   pub_key_label_len,
+						   pvt_key_label,
+						   pvt_key_label_len,
+						   pub_key_id,
+						   pub_key_id_len,
+						   pvt_key_id,
+						   pvt_key_id_len,
+						   token,
+						   pub_private,
+						   pvt_private,
+						   sensitive,
+						   modifiable,
+						   extractable,
+						   sign,
+						   verify,
+						   encrypt,
+						   decrypt,
+						   wrap,
+						   unwrap,
+						   derive,
+						   &h_new_pub,
+						   &h_new_pvt);
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "create_ec_key_pair: __gen_ec_key_pair failed with the return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "create_ec_key_pair: __gen_ec_key_pair failed with the return value %lu.", rv);
    		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2212,10 +2273,13 @@ int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 //		h_session					-- handle of an open session with the HSM.
 //		key_label					-- label for the key
 //		key_label_len				-- length of key label
+//		key_id						-- id for the key
+//		key_id_len					-- length of key id
 //		key_size					-- size of the key in bits
 //		mech_type 					-- type of key mechanism to create
 //		token						-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
 //		private_					-- 1 to indicate the keys are private to the HSM and require an auth session; otherwise 0
+//		sensitive	    			-- 1 to indicate the private key is sensitive; otherwise 0
 //	    modifiable					-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable					-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign						-- 1 to indicate the private key can sign; otherwise 0
@@ -2228,11 +2292,13 @@ int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 //		overwrite					-- 1 to indicate the an existing key pair with the same label name can be overwriten; otherwise 0
 //
 //----------------------------------------------------------------------------------------
-int create_secret_key(char* msg_buf, int msg_buf_len, int h_session,
-					  char* key_label, int key_label_len, int mech_type, int key_size,
-					  int token, int private_, int modifiable, int extractable, int sign,
-					  int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
-					  int* h_secret_key)
+int create_secret_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned long mech_type, unsigned long key_size,
+		unsigned long token, unsigned long private_, unsigned long sensitive, unsigned long modifiable,
+		unsigned long extractable, unsigned long sign, unsigned long verify, unsigned long encrypt, unsigned long decrypt,
+		unsigned long wrap, unsigned long unwrap, unsigned long derive, unsigned long overwrite,
+		unsigned long* h_secret_key)
 {
 	CK_OBJECT_HANDLE h_key = 0;
 	CK_RV rv = 0;
@@ -2281,7 +2347,7 @@ int create_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 
 	// make sure that the key label does not already exist on the HSM
 	// it will return a T/F depending on error conditions
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, key_label, key_label_len, (int*)&h_key);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, key_label, key_label_len, &h_key);
 	if (rv == FALSE)
 	{
 		return FALSE;
@@ -2312,12 +2378,15 @@ int create_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 
 	// setup templates and create the symmetrical key on the HSM
 	rv = __gen_secret_key(h_session,
-						  (CK_CHAR_PTR)key_label,
+						  key_label,
 						  key_label_len,
+						  key_id,
+						  key_id_len,
 						  mech_type,
 						  key_size,
 						  token,
 						  private_,
+						  sensitive,
 						  modifiable,
 						  extractable,
 						  sign,
@@ -2331,7 +2400,7 @@ int create_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "create_secret_key: __gen_secret_key failed with the return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "create_secret_key: __gen_secret_key failed with the return value %lu.", rv);
    		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2357,7 +2426,7 @@ int create_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 //		msg_buf_len	--	byte length of provided buffer
 //
 //----------------------------------------------------------------------------------------
-int get_slot_count(char* msg_buf, int msg_buf_len, int* slot_count)
+int get_slot_count(char* msg_buf, unsigned long msg_buf_len, unsigned long* slot_count)
 {
 	CK_ULONG cnt = 0;
 	CK_RV rv = 0;
@@ -2368,7 +2437,7 @@ int get_slot_count(char* msg_buf, int msg_buf_len, int* slot_count)
 	rv = _p11->C_GetSlotList(token_present, slot_list, &cnt);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_slot_count: Unexpected return value %d from PKCS#11 C_GetSlotList() while trying to count slots.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "get_slot_count: Unexpected return value %lu from PKCS#11 C_GetSlotList() while trying to count slots.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2397,7 +2466,7 @@ int get_slot_count(char* msg_buf, int msg_buf_len, int* slot_count)
 //		msg_buf_len	--	byte length of provided buffer
 //
 //----------------------------------------------------------------------------------------
-int get_token_count(char* msg_buf, int msg_buf_len, int* token_count)
+int get_token_count(char* msg_buf, unsigned long msg_buf_len, unsigned long* token_count)
 {
 	CK_ULONG cnt = 0;
 	CK_RV rv = 0;
@@ -2408,7 +2477,7 @@ int get_token_count(char* msg_buf, int msg_buf_len, int* token_count)
 	rv = _p11->C_GetSlotList(token_present, slot_list, &cnt);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_token_count: Unexpected return value %d from PKCS#11 C_GetSlotList() while trying to count tokens.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "get_token_count: Unexpected return value %lu from PKCS#11 C_GetSlotList() while trying to count tokens.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2432,12 +2501,12 @@ int get_token_count(char* msg_buf, int msg_buf_len, int* token_count)
 //		data_buf		--	to contain info with newline separating records and commas
 //							separating fields.
 //							Each record has:
-//								slot ID,
-//								token label,
-//								manufacturer ID,
-//								model,
-//								serial number,
-//								count of open sessions.
+//								* slot ID
+//								* token label
+//								* manufacturer ID
+//								* model
+//								* serial number
+//								* count of open sessions
 //	 	data_buf_len	-- modifies to the size allocated
 //		slot_count		-- number of slots on the machine
 //
@@ -2446,7 +2515,7 @@ int get_token_count(char* msg_buf, int msg_buf_len, int* token_count)
 //		data_buf_len	--	byte length of provided buffer
 //
 //----------------------------------------------------------------------------------------
-int get_slot_info(char* msg_buf, int msg_buf_len, char* data_buf, int* data_buf_len, int* token_count)
+int get_slot_info(char* msg_buf, unsigned long msg_buf_len, char* data_buf, unsigned long* data_buf_len, unsigned long* token_count)
 {
 	CK_RV rv = 0;
 	CK_ULONG slot_cnt_1 = 0;
@@ -2457,7 +2526,7 @@ int get_slot_info(char* msg_buf, int msg_buf_len, char* data_buf, int* data_buf_
 	rv = _p11->C_GetSlotList(TRUE, NULL_PTR, &slot_cnt_1);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_slot_info: Unexpected return value %d from PKCS#11 C_GetSlotList() while trying to get slot count.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "get_slot_info: Unexpected return value %lu from PKCS#11 C_GetSlotList() while trying to get slot count.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2475,7 +2544,7 @@ int get_slot_info(char* msg_buf, int msg_buf_len, char* data_buf, int* data_buf_
 	rv = _p11->C_GetSlotList(TRUE, slot_list, &slot_cnt_2);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_slot_info: Unexpected return value %d from PKCS#11 C_GetSlotList() while trying to fill slot info data structure.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "get_slot_info: Unexpected return value %lu from PKCS#11 C_GetSlotList() while trying to fill slot info data structure.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2489,9 +2558,9 @@ int get_slot_info(char* msg_buf, int msg_buf_len, char* data_buf, int* data_buf_
 	}
 
 	// determine if the buffer is large enough
-	if (MAX_RECORD_SIZE_BYTES * slot_cnt_2 + 1 > (CK_ULONG)*data_buf_len)
+	if (MAX_RECORD_SIZE_BYTES * slot_cnt_2 + 1 > *data_buf_len)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_slot_info: dataBufLen %d is too small", *data_buf_len);
+		snprintf(msg_buf, msg_buf_len, "get_slot_info: data_buf_len %lu is too small", *data_buf_len);
 		return FALSE;
 	}
 
@@ -2503,14 +2572,14 @@ int get_slot_info(char* msg_buf, int msg_buf_len, char* data_buf, int* data_buf_
 	}
 
 	CK_TOKEN_INFO token_info;
-	int offset = 0;
+	long offset = 0;
 
 	for (CK_ULONG i = 0; i < slot_cnt_2; i++)
 	{
 		rv = _p11->C_GetTokenInfo(slot_list[i], &token_info);
 		if (rv != CKR_OK)
 		{
-			snprintf(msg_buf, msg_buf_len, "get_slot_info: Unexpected return value %d from PKCS#11 C_GetTokenInfo() while trying to get token data.", (int)rv);
+			snprintf(msg_buf, msg_buf_len, "get_slot_info: Unexpected return value %lu from PKCS#11 C_GetTokenInfo() while trying to get token data.", rv);
 			__append_return_code(rv, msg_buf, msg_buf_len);
 			return FALSE;
 		}
@@ -2582,32 +2651,30 @@ int get_slot_info(char* msg_buf, int msg_buf_len, char* data_buf, int* data_buf_
 //		h_object				--  handle to the object that is to be queried for attribute value
 //		attribute_type			--  valid attribute type such as CKA_PRIME_1, CKA_PRIME_2, etc
 //----------------------------------------------------------------------------------------
-int get_attribute_value(char* msg_buf, int msg_buf_len, int h_session, int h_object,
-								int attribute_type, char *attribute_value, int* attribute_value_len)
+int get_attribute_value(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long h_object,
+		unsigned long attribute_type, unsigned char *attribute_value, unsigned long* attribute_value_len)
 {
 
 	// setup the attribute template
-	CK_ATTRIBUTE attrib_template[] = { {(CK_ATTRIBUTE_TYPE)attribute_type, NULL_PTR, 0} };
+	CK_ATTRIBUTE attrib_template[] = { {attribute_type, NULL_PTR, 0} };
 
-	// this cast might not be valid - it is the result of a (*__w64) error coming from the compiler
-	CK_ATTRIBUTE_PTR p_attribute_template = (CK_ATTRIBUTE_PTR)&attrib_template;
 	CK_RV rv = 0;
 
 	//  call the first time with a null pointer for the second field in the attribute template
 	//	in order to get the length of the data we need to extract
 	//  this is a really weird design but common in PKCS due to the C style API calls
-	rv = _p11->C_GetAttributeValue(h_session, h_object, p_attribute_template, 1);
+	rv = _p11->C_GetAttributeValue(h_session, h_object, attrib_template, 1);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_attribute_value: PKCS#11 C_GetAttributeValue() executed with errors; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "get_attribute_value: PKCS#11 C_GetAttributeValue() executed with errors; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
 
 	// test to make sure the buffer passed in is not too small
-	if ((CK_ULONG)*attribute_value_len < attrib_template[0].ulValueLen)
+	if (*attribute_value_len < attrib_template[0].ulValueLen)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_attribute_value: attributeValue buffer is too small to return attribute data return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "get_attribute_value: attributeValue buffer is too small to return attribute data return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2620,10 +2687,10 @@ int get_attribute_value(char* msg_buf, int msg_buf_len, int h_session, int h_obj
 	attrib_template[0].pValue = p_data;
 
 	// call C_GetAttributeValue again and this time actually retrieve our data value
-	rv = _p11->C_GetAttributeValue(h_session, h_object, p_attribute_template, 1);
+	rv = _p11->C_GetAttributeValue(h_session, h_object, attrib_template, 1);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "get_attribute_value: PKCS#11 C_GetAttributeValue() executed with errors when retrieving attribute data; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "get_attribute_value: PKCS#11 C_GetAttributeValue() executed with errors when retrieving attribute data; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		// free the memory we allocated
 		free(p_data);
@@ -2663,12 +2730,12 @@ int get_attribute_value(char* msg_buf, int msg_buf_len, int h_session, int h_obj
 //		h_object				--  handle to the object to update the attribute
 //		attribute_type			--  valid attribute type such as CKA_PRIME_1, CKA_PRIME_2, etc
 //----------------------------------------------------------------------------------------
-int set_attribute_value(char* msg_buf, int msg_buf_len, int h_session, int h_object,
-								int attribute_type, char *attribute_value, int attribute_value_len)
+int set_attribute_value(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long h_object,
+		unsigned long attribute_type, unsigned char *attribute_value, unsigned long attribute_value_len)
 {
 
 	// setup the attribute template
-	CK_ATTRIBUTE attrib_template[] = { {(CK_ATTRIBUTE_TYPE)attribute_type, attribute_value, (CK_ULONG)attribute_value_len} };
+	CK_ATTRIBUTE attrib_template[] = { {attribute_type, attribute_value, attribute_value_len} };
 
 	CK_ATTRIBUTE_PTR p_attrib_template = attrib_template;
 
@@ -2676,7 +2743,7 @@ int set_attribute_value(char* msg_buf, int msg_buf_len, int h_session, int h_obj
 	CK_RV rv = _p11->C_SetAttributeValue(h_session, h_object, p_attrib_template, 1);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "set_attribute_value: PKCS#11 C_SetAttributeValue() executed with errors; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "set_attribute_value: PKCS#11 C_SetAttributeValue() executed with errors; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2703,14 +2770,14 @@ int set_attribute_value(char* msg_buf, int msg_buf_len, int h_session, int h_obj
 //		msg_buf_len		--	byte length of provided error message buffer
 //		h_session		--  session handle
 //----------------------------------------------------------------------------------------
-int generate_random(char* msg_buf, int msg_buf_len, int h_session, char* random_data, int random_data_len)
+int generate_random(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* random_data, unsigned long random_data_len)
 {
 	CK_RV rv = CKR_OK;
 
-	rv = _p11->C_GenerateRandom(h_session, (CK_BYTE_PTR)random_data, random_data_len);
+	rv = _p11->C_GenerateRandom(h_session, random_data, random_data_len);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "generate_random: PKCS#11 C_GenerateRandom() executed with errors; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "generate_random: PKCS#11 C_GenerateRandom() executed with errors; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2737,14 +2804,14 @@ int generate_random(char* msg_buf, int msg_buf_len, int h_session, char* random_
 //		msg_buf_len				--	byte length of provided error message buffer
 //		h_session				--  session handle
 //----------------------------------------------------------------------------------------
-int seed_random(char* msg_buf, int msg_buf_len, int h_session, char* seed_data, int seed_data_len)
+int seed_random(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* seed_data, unsigned long seed_data_len)
 {
 	CK_RV rv = CKR_OK;
 
-	rv = _p11->C_SeedRandom(h_session, (CK_BYTE_PTR)seed_data, seed_data_len);
+	rv = _p11->C_SeedRandom(h_session, seed_data, seed_data_len);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "seed_random: PKCS#11 C_SeedRandom() executed with errors; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "seed_random: PKCS#11 C_SeedRandom() executed with errors; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2769,7 +2836,7 @@ int seed_random(char* msg_buf, int msg_buf_len, int h_session, char* seed_data, 
 //		h_object		--  handle of object to destroy
 //
 //----------------------------------------------------------------------------------------
-int destroy_object(char* msg_buf, int msg_buf_len, int h_session, int h_object)
+int destroy_object(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long h_object)
 {
 	//	null pointer check for session handle
 	if (!h_session)
@@ -2790,7 +2857,7 @@ int destroy_object(char* msg_buf, int msg_buf_len, int h_session, int h_object)
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "destroy_object: PKCS#11 C_DestroyObject() executed with errors; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "destroy_object: PKCS#11 C_DestroyObject() executed with errors; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2814,6 +2881,8 @@ int destroy_object(char* msg_buf, int msg_buf_len, int h_session, int h_object)
 //		h_session		-- session handle
 //		data_label		-- label of the data object on the HSM
 //		data_label_len	-- length of data object label
+//		data_id			-- id of the data object on the HSM
+//		data_id_len		-- length of data object id
 //		value			-- binary array containing the data in clear
 //		value_len		-- length of the data value array
 //		token			-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
@@ -2823,8 +2892,9 @@ int destroy_object(char* msg_buf, int msg_buf_len, int h_session, int h_object)
 //		h_object			-- object handle
 //
 //----------------------------------------------------------------------------------------
-int import_data_object(char* msg_buf, int msg_buf_len, int h_session, char* data_label, int data_label_len,
-		 	 	 	   char* value, int value_len, int token, int overwrite, int* h_object)
+int import_data_object(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* data_label, unsigned long data_label_len, unsigned char* data_id, unsigned long data_id_len,
+		unsigned char* value, unsigned long value_len, unsigned long token, unsigned long overwrite, unsigned long* h_object)
 {
 	CK_RV rv = 0;
 
@@ -2851,7 +2921,7 @@ int import_data_object(char* msg_buf, int msg_buf_len, int h_session, char* data
 
 	// make sure that the key label does not already exist on the HSM
 	CK_OBJECT_HANDLE h_test = 0;
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, data_label, data_label_len, (int*)&h_test);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, data_label, data_label_len, &h_test);
 	if (rv == FALSE)
 	{
 		snprintf(msg_buf, msg_buf_len, "import_data_object: get_object_handle() failed.");
@@ -2866,7 +2936,7 @@ int import_data_object(char* msg_buf, int msg_buf_len, int h_session, char* data
 			rv = _p11->C_DestroyObject(h_session, h_test);
 			if (rv != CKR_OK)
 			{
-				snprintf(msg_buf, msg_buf_len, "import_data_object: PKCS#11 C_DestroyObject failed for object label '%s' with the return value %d.", data_label, (int)rv);
+				snprintf(msg_buf, msg_buf_len, "import_data_object: PKCS#11 C_DestroyObject failed for object label '%s' with the return value %lu.", data_label, rv);
 	   			__append_return_code(rv, msg_buf, msg_buf_len);
 				return FALSE;
 			}
@@ -2883,17 +2953,18 @@ int import_data_object(char* msg_buf, int msg_buf_len, int h_session, char* data
 	CK_OBJECT_CLASS data_class = CKO_DATA;
 
 	CK_ATTRIBUTE dataTemplate[] = {
-	  {CKA_CLASS, &data_class, sizeof(data_class)},
-	  {CKA_TOKEN, &bToken, sizeof(bToken)},
-	  {CKA_LABEL, data_label, (CK_ULONG)data_label_len},
-	  {CKA_VALUE, value, (CK_ULONG)value_len}
+	  {CKA_CLASS, 	&data_class, 	sizeof(data_class)},
+	  {CKA_TOKEN, 	&bToken, 		sizeof(bToken)},
+	  {CKA_LABEL, 	data_label, 	data_label_len},
+	  {CKA_ID, 	  	data_id, 		data_id_len},
+	  {CKA_VALUE, 	value, 			value_len}
 	};
 
-	rv = _p11->C_CreateObject(h_session, (CK_ATTRIBUTE_PTR)&dataTemplate, 4, &h_data);
+	rv = _p11->C_CreateObject(h_session, dataTemplate, 4, &h_data);
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_data_object: PKCS#11 C_CreateObject() executed with errors; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "import_data_object: PKCS#11 C_CreateObject() executed with errors; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -2917,23 +2988,26 @@ int import_data_object(char* msg_buf, int msg_buf_len, int h_session, char* data
 //	Inputs:
 //		msg_buf_len			-- byte length of provided error message buffer
 //		h_session			-- session handle
-//		pub_key_label	  	-- label of the RSA public key object on the HSM
-//		pub_key_label_len	-- public key label length
-//		pub_exp				-- binary array containing the RSA key public exponent
-//		pub_exp_len			-- length of the public exponent array
-//		pub_mod				-- binary array containing the RSA key public modulus
-//		pub_mod_len			-- length of the public modulus array
+//		key_label	  		-- label of the RSA public key object on the HSM
+//		key_label_len		-- public key label length
+//		key_id				-- id for the public key
+//		key_id_len			-- length of public key id
+//		exp					-- binary array containing the RSA key public exponent
+//		exp_len				-- length of the public exponent array
+//		mod					-- binary array containing the RSA key public modulus
+//		mod_len				-- length of the public modulus array
 //		token				-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
 //		private_			-- 1 to indicate the keys are private to the HSM and require an authenticated session; otherwise 0
 //	    modifiable			-- 1 to indicate the keys can be modified; otherwise 0
 //		verify				-- 1 to indicate the public key can verify; otherwise 0
 //		encrypt				-- 1 to indicate the public key can encrypt; otherwise 0
 //		wrap				-- 1 to indicate the public key can wrap; otherwise 0
-//		overwrite			-- 1 to indicate the an existing key pair with the same label name can be overwriten; otherwise 0
+//		overwrite			-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
 //----------------------------------------------------------------------------------------
-int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pub_key_label, int pub_key_label_len,
-						  char* pub_exp, int pub_exp_len, char* pub_mod, int pub_mod_len,
-						  int token, int _private, int modifiable, int verify, int encrypt, int wrap, int overwrite, int* h_pub_key)
+int import_rsa_public_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned char* exp, unsigned long exp_len, unsigned char* mod, unsigned long mod_len,
+		unsigned long token, unsigned long _private, unsigned long modifiable, unsigned long verify, unsigned long encrypt, unsigned long wrap, unsigned long overwrite, unsigned long* h_pub_key)
 {
 	CK_RV rv = 0;
 
@@ -2945,36 +3019,36 @@ int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* p
 	}
 
 	//	null pointer check for key label
-	if (!pub_key_label)
+	if (!key_label)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: pub_key_label null pointer unexpected.");
+		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: key_label null pointer unexpected.");
 		return FALSE;
 	}
 
 	// check to make sure the public key label is not too long
-	if (pub_key_label_len > MAX_TOKEN_OBJECT_LABEL_SIZE)
+	if (key_label_len > MAX_TOKEN_OBJECT_LABEL_SIZE)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: pub_key_label parameter too long.");
+		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: key_label parameter too long.");
 		return FALSE;
 	}
 
 	//	null pointer check for public exponent
-	if (!pub_exp)
+	if (!exp)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: pub_exp null pointer unexpected.");
+		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: exp null pointer unexpected.");
 		return FALSE;
 	}
 
 	//	null pointer check for public modulus
-	if (!pub_mod)
+	if (!mod)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: pub_mod null pointer unexpected.");
+		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: mod null pointer unexpected.");
 		return FALSE;
 	}
 
 	// make sure that the key label does not already exist on the HSM
 	CK_OBJECT_HANDLE h_test = 0;
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pub_key_label, pub_key_label_len, (int*)&h_test);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, key_label, key_label_len, &h_test);
 	if (rv == FALSE)
 	{
 		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: get_object_handle() failed.");
@@ -2989,14 +3063,14 @@ int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* p
 			rv = _p11->C_DestroyObject(h_session, h_test);
 			if (rv != CKR_OK)
 			{
-				snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: PKCS#11 C_DestroyObject failed for object label '%s' with the return value %d.", pub_key_label, (int)rv);
+				snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: PKCS#11 C_DestroyObject failed for object label '%s' with the return value %lu.", key_label, rv);
 	   			__append_return_code(rv, msg_buf, msg_buf_len);
 				return FALSE;
 			}
 		}
 		else
 		{
-			snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: object label '%s' already exists.", pub_key_label);
+			snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: object label '%s' already exists.", key_label);
 			return FALSE;
 		}
 	}
@@ -3019,9 +3093,10 @@ int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* p
 	  {CKA_ENCRYPT, &b_encrypt, sizeof(b_encrypt)},
 	  {CKA_VERIFY, &b_verify, sizeof(b_verify)},
 	  {CKA_WRAP, &b_wrap, sizeof(b_wrap)},
-	  {CKA_MODULUS, pub_mod, (CK_ULONG)pub_mod_len},
-	  {CKA_PUBLIC_EXPONENT, pub_exp, (CK_ULONG)pub_exp_len},
-	  {CKA_LABEL, pub_key_label, (CK_ULONG)pub_key_label_len}
+	  {CKA_MODULUS, mod, mod_len},
+	  {CKA_PUBLIC_EXPONENT, exp, exp_len},
+	  {CKA_ID, key_id, key_id_len},
+	  {CKA_LABEL, key_label, key_label_len}
 	};
 
 	CK_OBJECT_HANDLE h_pub;
@@ -3032,7 +3107,7 @@ int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* p
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: PKCS#11 C_CreateObject() executed with errors; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "import_rsa_public_key: PKCS#11 C_CreateObject() executed with errors; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -3056,8 +3131,10 @@ int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* p
 //	Inputs:
 //		msg_buf_len			-- byte length of provided error message buffer
 //		h_session			-- session handle
-//		pub_key_label	  	-- label of the EC public key object on the HSM
-//		pub_key_label_len	-- public key label length
+//		key_label	  		-- label of the EC public key object on the HSM
+//		key_label_len		-- public key label length
+//		key_id				-- id for the public key
+//		key_id_len			-- length of public key id
 //		ec_params			-- binary array containing the EC parameters curve definition or OID
 //		ec_params_len		-- length of the EC parameters curve definition or OID
 //		ec_point			-- binary array containing the unique EC point
@@ -3070,9 +3147,10 @@ int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* p
 //		wrap				-- 1 to indicate the public key can wrap; otherwise 0
 //		overwrite			-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
 //----------------------------------------------------------------------------------------
-int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pub_key_label, int pub_key_label_len,
-						 char* ec_params, int ec_params_len, char* ec_point, int ec_point_len,
-						 int token, int _private, int modifiable, int verify, int encrypt, int wrap, int overwrite, int* h_pub_key)
+int import_ec_public_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned char* ec_params, unsigned long ec_params_len, unsigned char* ec_point, unsigned long ec_point_len,
+		unsigned long token, unsigned long _private, unsigned long modifiable, unsigned long verify, unsigned long encrypt, unsigned long wrap, unsigned long overwrite, unsigned long* h_pub_key)
 {
 	CK_RV rv = 0;
 
@@ -3084,16 +3162,16 @@ int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pu
 	}
 
 	//	null pointer check for key label
-	if (!pub_key_label)
+	if (!key_label)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: pub_key_label null pointer unexpected.");
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: key_label null pointer unexpected.");
 		return FALSE;
 	}
 
 	// check to make sure the public key label is not too long
-	if (pub_key_label_len > MAX_TOKEN_OBJECT_LABEL_SIZE)
+	if (key_label_len > MAX_TOKEN_OBJECT_LABEL_SIZE)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: pub_key_label parameter too long.");
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: key_label parameter too long.");
 		return FALSE;
 	}
 
@@ -3113,7 +3191,7 @@ int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pu
 
 	// make sure that the key label does not already exist on the HSM
 	CK_OBJECT_HANDLE h_test = 0;
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, pub_key_label, pub_key_label_len, (int*)&h_test);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, key_label, key_label_len, &h_test);
 	if (rv == FALSE)
 	{
 		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: get_object_handle() failed.");
@@ -3128,14 +3206,14 @@ int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pu
 			rv = _p11->C_DestroyObject(h_session, h_test);
 			if (rv != CKR_OK)
 			{
-				snprintf(msg_buf, msg_buf_len, "import_ec_public_key: PKCS#11 C_DestroyObject failed for object label '%s' with the return value %d.", pub_key_label, (int)rv);
+				snprintf(msg_buf, msg_buf_len, "import_ec_public_key: PKCS#11 C_DestroyObject failed for object label '%s' with the return value %lu.", key_label, rv);
 	   			__append_return_code(rv, msg_buf, msg_buf_len);
 				return FALSE;
 			}
 		}
 		else
 		{
-			snprintf(msg_buf, msg_buf_len, "import_ec_public_key: object label '%s' already exists.", pub_key_label);
+			snprintf(msg_buf, msg_buf_len, "import_ec_public_key: object label '%s' already exists.", key_label);
 			return FALSE;
 		}
 	}
@@ -3158,9 +3236,10 @@ int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pu
 	  {CKA_ENCRYPT, &b_encrypt, sizeof(b_encrypt)},
 	  {CKA_VERIFY, &b_verify, sizeof(b_verify)},
 	  {CKA_WRAP, &b_wrap, sizeof(b_wrap)},
-	  {CKA_EC_PARAMS, ec_params, (CK_ULONG)ec_params_len},
-	  {CKA_EC_POINT, ec_point, (CK_ULONG)ec_point_len},
-	  {CKA_LABEL, pub_key_label, (CK_ULONG)pub_key_label_len}
+	  {CKA_EC_PARAMS, ec_params, ec_params_len},
+	  {CKA_EC_POINT, ec_point, ec_point_len},
+	  {CKA_ID, key_id, key_id_len},
+	  {CKA_LABEL, key_label, key_label_len}
 	};
 
 	CK_OBJECT_HANDLE h_pub;
@@ -3171,7 +3250,7 @@ int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pu
 
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: PKCS#11 C_CreateObject() executed with errors; return value %d.", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "import_ec_public_key: PKCS#11 C_CreateObject() executed with errors; return value %lu.", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -3180,7 +3259,6 @@ int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pu
 
 	return TRUE;
 }
-
 
 
 //----------------------------------------------------------------------------------------
@@ -3205,9 +3283,9 @@ int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pu
 //		mech_type		--  wrapping key mechanism to use (3DES-CBC, AES-128-CBC, etc)
 //
 //----------------------------------------------------------------------------------------
-int wrap_key(char* msg_buf, int msg_buf_len, int h_session, int h_key,
-							   int h_wrap_key, char* iv, int iv_len, int mech_type,
-							   char *key_buf, int* key_buf_len)
+int wrap_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long h_key,
+		unsigned long h_wrap_key, unsigned char* iv, unsigned long iv_len, unsigned long mech_type,
+		unsigned char *key_buf, unsigned long* key_buf_len)
 {
 	//	value check
 	if (h_session <= 0)
@@ -3226,7 +3304,7 @@ int wrap_key(char* msg_buf, int msg_buf_len, int h_session, int h_key,
 	// value check
 	if (h_wrap_key <=0)
 	{
-		snprintf(msg_buf, msg_buf_len, "wrap_key: h_wrap_key value must be greater than zero..");
+		snprintf(msg_buf, msg_buf_len, "wrap_key: h_wrap_key value must be greater than zero.");
 		return FALSE;
 	}
 
@@ -3252,12 +3330,12 @@ int wrap_key(char* msg_buf, int msg_buf_len, int h_session, int h_key,
 	}
 
 	// wrap the private key and get back the wrapped key length and data in the keyBuffer field
-	CK_RV rv = __wrap_key(h_session, (CK_BYTE_PTR)key_buf, (CK_ULONG_PTR)key_buf_len, h_wrap_key, h_key, mech_type, iv, iv_len);
+	CK_RV rv = __wrap_key(h_session, key_buf, key_buf_len, h_wrap_key, h_key, mech_type, iv, iv_len);
 
 	// evaluate return code
 	if (rv != CKR_OK)
     {
-		snprintf(msg_buf, msg_buf_len, "wrap_key: __wrap_key() failed to wrap target key; return value %d", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "wrap_key: __wrap_key() failed to wrap target key; return value %lu", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -3286,11 +3364,14 @@ int wrap_key(char* msg_buf, int msg_buf_len, int h_session, int h_key,
 //		mech_type		--  wrapping key mechanism to use (3DES-CBC, AES-128-CBC, etc)
 //		key_label		--  key label of new private key
 //		key_label_len	--  key label length
+//		key_id			--  key id of new private key
+//		key_id_len		--  key id length
 //		key_buf		    --  wrapped private key bytes
 //		key_buf_len		--  length of the wrapped private key bytes
 //		key_type		--	type of private key (DES, DES2, DES3, AES, etc)
 //		token			--	1 to indicate the private key exists on the token and not the session; otherwise 0
 //		private_		--	1 to indicate the private key is private and can only be accessed after authentication; otherwise 0
+//		sensitive	    --  1 to indicate the private key is sensitive; otherwise 0
 //		modifiable		--	1 to indicate the private key can be modified; otherwise 0
 //		extractable		--	1 to indicate the private key can be extracted; otherwise 0
 //		sign			--	1 to indicate the private key can sign; otherwise 0
@@ -3302,12 +3383,13 @@ int wrap_key(char* msg_buf, int msg_buf_len, int h_session, int h_key,
 //	Outputs:
 //		h_pvt_key		-- object handle
 //----------------------------------------------------------------------------------------
-int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
-					   int h_wrap_key, char* iv, int iv_len, int mech_type,
-					   char* key_label, int key_label_len, char* key_buf, int key_buf_len, int key_type,
-					   int token, int private_, int modifiable, int extractable,
-					   int sign, int decrypt, int unwrap, int derive, int overwrite,
-					   int* h_pvt_key)
+int unwrap_private_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned long h_wrap_key, unsigned char* iv, unsigned long iv_len, unsigned long mech_type,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned char* key_buf, unsigned long key_buf_len, unsigned long key_type,
+		unsigned long token, unsigned long private_, unsigned long sensitive, unsigned long modifiable, unsigned long extractable,
+		unsigned long sign, unsigned long decrypt, unsigned long unwrap, unsigned long derive, unsigned long overwrite,
+		unsigned long* h_pvt_key)
 {
 	CK_RV rv;
 
@@ -3362,7 +3444,7 @@ int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
 
 	// make sure that the key label does not already exist on the HSM
 	CK_OBJECT_HANDLE h_test = 0;
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, key_label, key_label_len, (int*)&h_test);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, key_label, key_label_len, &h_test);
 	if (rv == FALSE)
 	{
 		snprintf(msg_buf, msg_buf_len, "unwrap_private_key: get_object_handle failed.");
@@ -3377,7 +3459,7 @@ int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
 			rv = _p11->C_DestroyObject(h_session, h_test);
 			if (rv != CKR_OK)
 			{
-				snprintf(msg_buf, msg_buf_len, "unwrap_private_key: PKCS#11 C_DestroyObject failed for private key label '%s' with the return value %d.", key_label, (int)rv);
+				snprintf(msg_buf, msg_buf_len, "unwrap_private_key: PKCS#11 C_DestroyObject failed for private key label '%s' with the return value %lu.", key_label, rv);
 	   			__append_return_code(rv, msg_buf, msg_buf_len);
 				return FALSE;
 			}
@@ -3392,29 +3474,32 @@ int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
 	CK_OBJECT_HANDLE h_new_key = 0;
 
 	rv = __unwrap_private_key(h_session,
-							h_wrap_key,
-							(CK_BYTE_PTR)iv,
-							iv_len,
-							mech_type,
-							key_label,
-							(CK_ULONG)key_label_len,
-							(CK_BYTE_PTR)key_buf,
-							key_buf_len,
-							key_type,
-							token,
-							private_,
-							modifiable,
-							extractable,
-							sign,
-							decrypt,
-							unwrap,
-							derive,
-							&h_new_key);
+							  h_wrap_key,
+							  iv,
+							  iv_len,
+							  mech_type,
+							  key_label,
+							  key_label_len,
+							  key_id,
+							  key_id_len,
+							  key_buf,
+							  key_buf_len,
+							  key_type,
+							  token,
+							  private_,
+							  sensitive,
+							  modifiable,
+							  extractable,
+							  sign,
+							  decrypt,
+							  unwrap,
+							  derive,
+							  &h_new_key);
 
 	// evaluate return code
 	if (rv != CKR_OK)
     {
-		snprintf(msg_buf, msg_buf_len, "unwrap_private_key: __unwrap_private_key() failed; return value %d", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "unwrap_private_key: __unwrap_private_key() failed; return value %lu", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -3444,12 +3529,15 @@ int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
 //		mech_type		--  wrapping key mechanism to use (3DES-CBC, AES-128-CBC, etc)
 //		key_label		--  key label for new secret key
 //      key_label_len	--	length of key label
+//		key_id			--  key id for new secret key
+//      key_id_len		--	length of key id
 //		key_buf		    --  wrapped secret key bytes
 //		key_buf_len		--  length of the wrapped secret key bytes
 //		key_type		--	type of secret key (DES, DES2, DES3, AES, etc)
 //		key_size		--	size of the key in bits (112, 128, 192, 256, etc)
 //		token			--	1 to indicate the secret key exists on the token and not the session; otherwise 0
 //		private_		--	1 to indicate the secret key is private and can only be accessed after authentication; otherwise 0
+//		sensitive	   	--  1 to indicate the private key is sensitive; otherwise 0
 //		modifiable		--	1 to indicate the secret key can be modified; otherwise 0
 //		extractable		--	1 to indicate the secret key can be extracted; otherwise 0
 //		sign			--	1 to indicate the secret key can sign; otherwise 0
@@ -3458,16 +3546,18 @@ int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
 //		decrypt			--	1 to indicate the secret key can decrypt; otherwise 0
 //		wrap			--	1 to indicate the secret key can wrap; otherwise 0
 //		unwrap			--	1 to indicate the secret key can unwrap; otherwise 0
-//		overwrite		--  1 to indicate the existing secret key with the same label name can be overwriten; otherwise 0
+//		overwrite		--  1 to indicate the existing secret key with the same label name can be overwritten; otherwise 0
 //		derive			--	1 to indicate the secret key can be used to derive other keys; otherwise 0
 //
 //----------------------------------------------------------------------------------------
-int unwrap_secret_key(char* msg_buf, int msg_buf_len, int h_session,
-						int h_wrap_key, char* iv, int iv_len, int mech_type,
-						char* key_label, int key_label_len, char* key_buf, int key_buf_len, int key_type, int key_size,
-						int token, int private_, int modifiable, int extractable,
-						int sign, int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
-						int* h_secret_key)
+int unwrap_secret_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned long h_wrap_key, unsigned char* iv, unsigned long iv_len, unsigned long mech_type,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned char* key_buf, unsigned long key_buf_len,
+		unsigned long key_type, unsigned long key_size,	unsigned long token, unsigned long private_,
+		unsigned long sensitive, unsigned long modifiable, unsigned long extractable, unsigned long sign,
+		unsigned long verify, unsigned long encrypt, unsigned long decrypt, unsigned long wrap, unsigned long unwrap,
+		unsigned long derive, unsigned long overwrite, unsigned long* h_secret_key)
 {
 	CK_RV rv;
 
@@ -3529,7 +3619,7 @@ int unwrap_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 
 	// make sure that the key label does not already exist on the HSM
 	CK_OBJECT_HANDLE h_test = 0;
-	rv = get_object_handle(msg_buf, msg_buf_len, h_session, key_label, key_label_len, (int*)&h_test);
+	rv = get_object_handle(msg_buf, msg_buf_len, h_session, key_label, key_label_len, &h_test);
 	if (rv == FALSE)
 	{
 		snprintf(msg_buf, msg_buf_len, "unwrap_secret_key: get_object_handle failed.");
@@ -3544,7 +3634,7 @@ int unwrap_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 			rv = _p11->C_DestroyObject(h_session, h_test);
 			if (rv != CKR_OK)
 			{
-				snprintf(msg_buf, msg_buf_len, "unwrap_secret_key: PKCS#11 C_DestroyObject failed for secret key label '%s' with the return value %d.", key_label, (int)rv);
+				snprintf(msg_buf, msg_buf_len, "unwrap_secret_key: PKCS#11 C_DestroyObject failed for secret key label '%s' with the return value %lu.", key_label, rv);
 	   			__append_return_code(rv, msg_buf, msg_buf_len);
 				return FALSE;
 			}
@@ -3559,33 +3649,36 @@ int unwrap_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 	CK_OBJECT_HANDLE h_new_key = 0;
 
 	rv = __unwrap_secret_key(h_session,
-							h_wrap_key,
-							(CK_BYTE_PTR)iv,
-							iv_len,
-							mech_type,
-							(CK_CHAR_PTR)key_label,
-							key_label_len,
-							(CK_BYTE_PTR)key_buf,
-							key_buf_len,
-							key_type,
-							key_size,
-							token,
-							private_,
-							modifiable,
-							extractable,
-							sign,
-							verify,
-							encrypt,
-							decrypt,
-							wrap,
-							unwrap,
-							derive,
-							&h_new_key);
+							 h_wrap_key,
+							 iv,
+							 iv_len,
+							 mech_type,
+							 key_label,
+							 key_label_len,
+							 key_id,
+							 key_id_len,
+							 key_buf,
+							 key_buf_len,
+							 key_type,
+							 key_size,
+							 token,
+							 private_,
+							 sensitive,
+							 modifiable,
+							 extractable,
+							 sign,
+							 verify,
+							 encrypt,
+							 decrypt,
+							 wrap,
+							 unwrap,
+							 derive,
+							 &h_new_key);
 
 	// evaluate return code
 	if (rv != CKR_OK)
     {
-		snprintf(msg_buf, msg_buf_len, "unwrap_secret_key: __unwrap_secret_key() failed; return value %d", (int)rv);
+		snprintf(msg_buf, msg_buf_len, "unwrap_secret_key: __unwrap_secret_key() failed; return value %lu", rv);
 		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}
@@ -3596,7 +3689,121 @@ int unwrap_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 }
 
 
-void __append_return_code(CK_RV code, char* text, unsigned int text_len)
+//----------------------------------------------------------------------------------------
+// get_mechanism_info()
+//	Queries the slot and returns information supported PKCS#11 support mechanism info.
+//
+//	Returns:
+//		FALSE if an error occurs otherwise TRUE
+//
+//	Modifies:
+//		msg_buf			--  contains error messages
+//		data_buf		--	to contain info with newline separating records and commas
+//							separating fields.
+//							Each record has:
+//								* mechanism name
+//								* mechanism value in base16 (hex)
+//								* min key size
+//								* max key size
+//								* flags
+//	 	data_buf_len	--  modifies to the size allocated
+//		mech_count		--  modified to the number of mechanisms reported
+//
+//	Inputs:
+//		msg_buf_len		--	byte length of provided buffer
+//		slot			--  slot number
+//		data_buf_len	--	byte length of provided buffer
+//
+//----------------------------------------------------------------------------------------
+int get_mechanism_info(char* msg_buf, unsigned long msg_buf_len, unsigned long slot, char* data_buf, unsigned long* data_buf_len, unsigned long* mech_count)
+{
+	CK_RV rv;
+	CK_ULONG mech_count_1 = 0;
+
+	// first call to with NULL parameter gets the mech list count so we
+	// can allocate storage space to fill with the 2nd call
+	rv = _p11->C_GetMechanismList(slot, NULL, &mech_count_1);
+	if (rv != CKR_OK)
+	{
+		snprintf(msg_buf, msg_buf_len, "get_mechanism_list: PKCS#11 C_GetMechanismList failed with the return value %lu.", rv);
+		__append_return_code(rv, msg_buf, msg_buf_len);
+		return FALSE;
+	}
+
+	// if the number of slots is less than 1 then exit
+	if (mech_count_1 < 1)
+	{
+		*data_buf_len = 0;
+		return TRUE;
+	}
+
+	// allocate memory buffer to fixed size on the stack so we don't have to worry with memory allocation/cleanup
+	CK_ULONG MAX_MECH_TYPES = 500;
+	CK_MECHANISM_TYPE pMechanismList[MAX_MECH_TYPES];
+
+	// return an error if the number of mechs exceeds what the library supports
+	if (mech_count_1 > MAX_MECH_TYPES)
+	{
+		snprintf(msg_buf, msg_buf_len, "get_mechanism_list: more mechanisms detected than supported by library mech_count=%lu MAX_MECH_TYPES=%lu", mech_count_1, MAX_MECH_TYPES);
+		return FALSE;
+	}
+
+	CK_ULONG mech_count_2 = mech_count_1;
+
+	// make 2nd call to fill the buffer
+	rv = _p11->C_GetMechanismList(slot, pMechanismList, &mech_count_2);
+	if (rv != CKR_OK)
+	{
+		snprintf(msg_buf, msg_buf_len, "get_mechanism_list: PKCS#11 C_GetMechanismList failed with the return value %lu.", rv);
+		__append_return_code(rv, msg_buf, msg_buf_len);
+		return FALSE;
+	}
+
+	// determine if the buffer is large enough
+	CK_ULONG MAX_RECORD_SIZE_BYTES = 200;
+	CK_ULONG MIN_DATA_BUF_SIZE = MAX_RECORD_SIZE_BYTES * mech_count_2 + 1;
+	if (*data_buf_len < MIN_DATA_BUF_SIZE)
+	{
+		snprintf(msg_buf, msg_buf_len, "get_mechanism_list: data_buf %lu is too small minimum size is %lu", *data_buf_len, MIN_DATA_BUF_SIZE);
+		return FALSE;
+	}
+
+    CK_MECHANISM_INFO mech_info;
+	long offset = 0;
+    for (CK_ULONG i = 0; i < mech_count_2; i++)
+	{
+    	CK_MECHANISM_TYPE mech_type = pMechanismList[i];
+    	// retrieve additional mech info
+    	rv = _p11->C_GetMechanismInfo(slot, mech_type, &mech_info);
+    	if (rv != CKR_OK)
+    	{
+    		snprintf(msg_buf, msg_buf_len, "get_mechanism_list: PKCS#11 C_GetMechanismInfo failed with the return value %lu.", rv);
+    		__append_return_code(rv, msg_buf, msg_buf_len);
+    		return FALSE;
+    	}
+
+		// update the data buffer with the mech information
+		offset += snprintf(data_buf+offset, *data_buf_len - offset,
+						   "%s|0x%08lx|%lu|%lu|0x%08lx\n",
+						   __mechanism_type_to_str(mech_type),
+						   mech_type,
+						   mech_info.ulMinKeySize,
+						   mech_info.ulMaxKeySize,
+						   mech_info.flags);
+
+	}
+
+	// remove the last LF
+	offset--;
+	// update the data buffer length return value
+	*data_buf_len = offset;
+	*mech_count = mech_count_2;
+
+	return TRUE;
+}
+
+
+void __append_return_code(CK_RV code, char* text, unsigned long text_len)
 {
 	switch(code)
 	{
@@ -3612,11 +3819,6 @@ void __append_return_code(CK_RV code, char* text, unsigned int text_len)
 		case CKR_SLOT_ID_INVALID:
 			strncat(text, " CKR_SLOT_ID_INVALID ", text_len);
 			break;
-#ifdef PKCS11_V1
-		case  CKR_FLAGS_INVALID:
-			strncat(text, " CKR_FLAGS_INVALID ", text_len);
-			break;
-#endif
 		case CKR_GENERAL_ERROR:
 			strncat(text, " CKR_GENERAL_ERROR ", text_len);
 			break;
@@ -3680,11 +3882,6 @@ void __append_return_code(CK_RV code, char* text, unsigned int text_len)
 		case CKR_KEY_HANDLE_INVALID:
 			strncat(text, " CKR_KEY_HANDLE_INVALID ", text_len);
 			break;
-#ifdef PKCS11_V1
-		case CKR_KEY_SENSITIVE:
-			strncat(text, " CKR_KEY_SENSITIVE ", text_len);
-			break;
-#endif
 		case CKR_KEY_SIZE_RANGE:
 			strncat(text, " CKR_KEY_SIZE_RANGE ", text_len);
 			break;
@@ -3718,14 +3915,6 @@ void __append_return_code(CK_RV code, char* text, unsigned int text_len)
 		case CKR_MECHANISM_PARAM_INVALID:
 			strncat(text, " CKR_MECHANISM_PARAM_INVALID ", text_len);
 			break;
-#ifdef PKCS11_V1
-		case CKR_OBJECT_CLASS_INCONSISTENT:
-			strncat(text, " CKR_OBJECT_CLASS_INCONSISTENT ", text_len);
-			break;
-		case CKR_OBJECT_CLASS_INVALID:
-			strncat(text, " CKR_OBJECT_CLASS_INVALID ", text_len);
-			break;
-#endif
 		case CKR_OBJECT_HANDLE_INVALID:
 			strncat(text, " CKR_OBJECT_HANDLE_INVALID ", text_len);
 			break;
@@ -3874,7 +4063,7 @@ void __append_return_code(CK_RV code, char* text, unsigned int text_len)
 	// attach the CKR code value as hex to the message text string
 	char code_buf[20];
 	int cx = snprintf(code_buf, 20, "(0x%08lx) ", code);
-	if (cx>=0 && cx<100)
+	if (cx >= 0 && cx < 100)
 		strncat(text, code_buf, text_len);
 
 }

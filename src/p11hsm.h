@@ -1,9 +1,3 @@
-//  
-// Copyright (c) 2016-present, Cisco Systems, Inc. All rights reserved.
-//
-// This source code is licensed under the GPLv2 license found in the
-// LICENSE.txt file in the root directory of this source tree. 
-//
 
 //----------------------------------------------------------------------------------------
 // p11hsm.h
@@ -17,7 +11,7 @@
 //
 // PKCS#11 v2.20 mechanisms and other definitions can be found in /oasis/pkcs11t.h
 //
-// Authored by Benton Stark (bestark@cisco.com)
+// Written by Benton Stark (bestark@cisco.com)
 // Sept. 7, 2016
 //----------------------------------------------------------------------------------------
 
@@ -56,7 +50,7 @@
 //		msg_buf_len			--	byte length of provided error message buffer
 //		version_info_len	--  byte length of versionInfo buffer (minimum 15 bytes)
 //----------------------------------------------------------------------------------------
-EXTERN_C int get_lib_version(char* msg_buf, int msg_buf_len, char *version_info, int version_info_len);
+EXTERN_C int get_lib_version(char* msg_buf, unsigned long msg_buf_len, char *version_info, unsigned long version_info_len);
 
 //----------------------------------------------------------------------------------------
 // connect()
@@ -75,7 +69,7 @@ EXTERN_C int get_lib_version(char* msg_buf, int msg_buf_len, char *version_info,
 //		lib_path_len -- length of library path
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int connect(char* msg_buf, int msg_buf_len, char* lib_path, int lib_path_len);
+EXTERN_C int connect(char* msg_buf, unsigned long msg_buf_len, char* lib_path, unsigned long lib_path_len);
 
 //----------------------------------------------------------------------------------------
 // disconnect()
@@ -90,7 +84,7 @@ EXTERN_C int connect(char* msg_buf, int msg_buf_len, char* lib_path, int lib_pat
 //	Inputs:
 //		msg_buf_len	-- byte length of provided error message buffer
 //----------------------------------------------------------------------------------------
-EXTERN_C int disconnect(char* msg_buf, int msg_buf_len);
+EXTERN_C int disconnect(char* msg_buf, unsigned long msg_buf_len);
 
 //----------------------------------------------------------------------------------------
 // initialize()
@@ -105,7 +99,7 @@ EXTERN_C int disconnect(char* msg_buf, int msg_buf_len);
 //	Inputs:
 //		msg_buf_len	--	byte length of provided error message buffer
 //----------------------------------------------------------------------------------------
-EXTERN_C int initialize(char* msg_buf, int msg_buf_len);
+EXTERN_C int initialize(char* msg_buf, unsigned long msg_buf_len);
 
 //----------------------------------------------------------------------------------------
 // finalize()
@@ -120,7 +114,7 @@ EXTERN_C int initialize(char* msg_buf, int msg_buf_len);
 //	Inputs:
 //		msg_buf_len	-- byte length of provided error message buffer
 //----------------------------------------------------------------------------------------
-EXTERN_C int finalize(char* msg_buf, int msg_buf_len);
+EXTERN_C int finalize(char* msg_buf, unsigned long msg_buf_len);
 
 //----------------------------------------------------------------------------------------
 // open_session()
@@ -150,7 +144,7 @@ EXTERN_C int finalize(char* msg_buf, int msg_buf_len);
 //																  this flag must be set if the Login CK_USER_TYPE is a CKU_SO
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int open_session(char* msg_buf, int msg_buf_len, int slot, int flags, int *h_session);
+EXTERN_C int open_session(char* msg_buf, unsigned long msg_buf_len, unsigned long slot, unsigned long flags, unsigned long* h_session);
 
 //----------------------------------------------------------------------------------------
 // close_session()
@@ -166,7 +160,7 @@ EXTERN_C int open_session(char* msg_buf, int msg_buf_len, int slot, int flags, i
 //		msg_buf_len		-- byte length of provided error message buffer
 //		h_session		-- session handle to close
 //----------------------------------------------------------------------------------------
-EXTERN_C int close_session(char* msg_buf, int msg_buf_len, int h_session);
+EXTERN_C int close_session(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session);
 
 //----------------------------------------------------------------------------------------
 // close_all_sessions()
@@ -182,7 +176,7 @@ EXTERN_C int close_session(char* msg_buf, int msg_buf_len, int h_session);
 //		msg_buf_len		-- byte length of provided error message buffer
 //		slotId			-- ID of the slot to close all sessions on
 //----------------------------------------------------------------------------------------
-EXTERN_C int close_all_sessions(char* msg_buf, int msg_buf_len, int slot_id);
+EXTERN_C int close_all_sessions(char* msg_buf, unsigned long msg_buf_len, unsigned long slot_id);
 
 //----------------------------------------------------------------------------------------
 // login()
@@ -202,7 +196,7 @@ EXTERN_C int close_all_sessions(char* msg_buf, int msg_buf_len, int slot_id);
 //		user_pin		--  user PIN number
 //      user_pin_len	--  length of user PIN
 //----------------------------------------------------------------------------------------
-EXTERN_C int login(char* msg_buf, int msg_buf_len, int h_session, int user_type, char* user_pin, int user_pin_len);
+EXTERN_C int login(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long user_type, unsigned char* user_pin, unsigned long user_pin_len);
 
 //----------------------------------------------------------------------------------------
 // logout()
@@ -219,7 +213,7 @@ EXTERN_C int login(char* msg_buf, int msg_buf_len, int h_session, int user_type,
 //		msg_buf_len		-- byte length of provided error message buffer.
 //		h_session		-- active session handle
 //----------------------------------------------------------------------------------------
-EXTERN_C int logout(char* msg_buf, int msg_buf_len, int h_session);
+EXTERN_C int logout(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session);
 
 //----------------------------------------------------------------------------------------
 // set_pin()
@@ -239,7 +233,7 @@ EXTERN_C int logout(char* msg_buf, int msg_buf_len, int h_session);
 //		new_pin			--  new user PIN
 //		new_pin_len		--  new user PIN length
 //----------------------------------------------------------------------------------------
-EXTERN_C int set_pin(char* msg_buf, int msg_buf_len, int h_session, char* old_pin, int old_pin_len, char* new_pin, int new_pin_len);
+EXTERN_C int set_pin(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* old_pin, unsigned long old_pin_len, unsigned char* new_pin, unsigned long new_pin_len);
 
 //----------------------------------------------------------------------------------------
 // find_objects()
@@ -259,7 +253,7 @@ EXTERN_C int set_pin(char* msg_buf, int msg_buf_len, int h_session, char* old_pi
 //		h_session				--	handle of an open session with the HSM.
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int find_objects(char* msg_buf, int msg_buf_len, int h_session, int* h_object_array, int* h_object_array_len);
+EXTERN_C int find_objects(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long* h_object_array, unsigned long* h_object_array_len);
 
 //----------------------------------------------------------------------------------------
 // get_object_handle()
@@ -278,7 +272,7 @@ EXTERN_C int find_objects(char* msg_buf, int msg_buf_len, int h_session, int* h_
 //		object_label_len	--	length of object label
 //		h_session			--	handle of an open session with the HSM
 //----------------------------------------------------------------------------------------
-EXTERN_C int get_object_handle(char* msg_buf, int msg_buf_len, int h_session, char* object_label, int object_label_len, int* h_object);
+EXTERN_C int get_object_handle(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* object_label, unsigned long object_label_len, unsigned long* h_object);
 
 //----------------------------------------------------------------------------------------
 // sign()
@@ -301,8 +295,8 @@ EXTERN_C int get_object_handle(char* msg_buf, int msg_buf_len, int h_session, ch
 //		salt_len				 -- optional salt length value (required for PSS signatures)
 //		h_session				 --	handle of an open session with the HSM
 //----------------------------------------------------------------------------------------
-EXTERN_C int sign(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data_buf_len,
-				  int h_key, int mech_type, int salt_len, char* sig_buf, int* sig_buf_len);
+EXTERN_C int sign(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* data_buf, unsigned long data_buf_len,
+		 unsigned long h_key, unsigned long mech_type, unsigned long salt_len, unsigned char* sig_buf, unsigned long* sig_buf_len);
 
 //----------------------------------------------------------------------------------------
 // verify()
@@ -327,8 +321,8 @@ EXTERN_C int sign(char* msg_buf, int msg_buf_len, int h_session, char* data_buf,
 //		sig_buf_Len				--	byte length of signature buffer
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int verify(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data_buf_len, int h_key,
-					int mech_type, int salt_len, char* sig_buf, int sig_buf_len);
+EXTERN_C int verify(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* data_buf, unsigned long data_buf_len, unsigned long h_key,
+		   unsigned long mech_type, unsigned long salt_len, unsigned char* sig_buf, unsigned long sig_buf_len);
 
 //----------------------------------------------------------------------------------------
 // encrypt()
@@ -354,9 +348,9 @@ EXTERN_C int verify(char* msg_buf, int msg_buf_len, int h_session, char* data_bu
 //		iv_len					--  encryption initialization vector length
 //----------------------------------------------------------------------------------------
 //
-EXTERN_C int encrypt(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data_buf_len,
-					 int h_key, int mech_type, char* iv, int iv_len,
-					 char* encrypted_data_buf, int* encrypted_data_buf_len);
+EXTERN_C int encrypt(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* data_buf, unsigned long data_buf_len,
+		unsigned long h_key, unsigned long mech_type, unsigned char* iv, unsigned long iv_len,
+		unsigned char* encrypted_data_buf, unsigned long* encrypted_data_buf_len);
 
 //----------------------------------------------------------------------------------------
 // decrypt()
@@ -382,10 +376,10 @@ EXTERN_C int encrypt(char* msg_buf, int msg_buf_len, int h_session, char* data_b
 //		iv_len					--  initialization vector length
 //----------------------------------------------------------------------------------------
 //
-EXTERN_C int decrypt(char* msg_buf, int msg_buf_len, int h_session,
-					 char* data_buf, int data_buf_len, int h_key,
-					 int mech_type, char* iv, int iv_len,
-					 char* decrypted_data_buf, int* decrypted_data_buf_len);
+EXTERN_C int decrypt(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* data_buf, unsigned long data_buf_len, unsigned long h_key,
+		unsigned long mech_type, unsigned char* iv, unsigned long iv_len,
+		unsigned char* decrypted_data_buf, unsigned long* decrypted_data_buf_len);
 
 //----------------------------------------------------------------------------------------
 // digest()
@@ -407,8 +401,8 @@ EXTERN_C int decrypt(char* msg_buf, int msg_buf_len, int h_session,
 //		mech_type				--  algorithm to be used to digest the data (e.g. CKM_SHA256, CKM_SHA512, etc)
 //----------------------------------------------------------------------------------------
 //
-EXTERN_C int digest(char* msg_buf, int msg_buf_len, int h_session, char* data_buf, int data_buf_len,
-					int mech_type, char* digest_data_buf, int* digest_data_buf_len);
+EXTERN_C int digest(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* data_buf, unsigned long data_buf_len,
+		unsigned long mech_type, unsigned char* digest_data_buf, unsigned long* digest_data_buf_len);
 
 
 //----------------------------------------------------------------------------------------
@@ -431,10 +425,20 @@ EXTERN_C int digest(char* msg_buf, int msg_buf_len, int h_session, char* data_bu
 //		pub_key_label_len			-- length of public key label
 //		pvt_key_label				-- label for the private key
 //		pvt_key_label_len			-- length of private key label
+//		pub_key_id					-- id for the public key
+//		pub_key_id_len				-- length of public key id
+//		pvt_key_id					-- id for the private key
+//		pvt_key_id_len				-- length of private key id
+//		mech_type				    -- mechanism type (usually CKM_RSA_X9_31_KEY_PAIR_GEN or CKM_RSA_PKCS_KEY_PAIR_GEN)
+// 						  		 	   Note: CKM_RSA_X9_31_KEY_PAIR_GEN is functionally identical to CKM_RSA_PKCS_KEY_PAIR_GEN
+//						   			   but provides stronger guarantee of p and q values as defined in X9.31
+// 									   Cavium HSMs only support the CKM_RSA_X9_31_KEY_PAIR_GEN mechanism
 //		pub_exp						-- byte array containing public exponent value
 //      pub_exp_len					-- length of the publicExp byte array
 //		token						-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
-//		private_					-- 1 to indicate the keys are private to the HSM and requires an authenticated session; otherwise 0
+//		pub_private 				-- 1 to indicate the public key is marked private and can only be accessed after authentication; otherwise 0
+//		pvt_private 				-- 1 to indicate the private key is marked private and can only be accessed after authentication; otherwise 0
+//		sensitive	    			-- 1 to indicate the private key is sensitive; otherwise 0
 //	    modifiable					-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable					-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign						-- 1 to indicate the private key can sign; otherwise 0
@@ -447,12 +451,12 @@ EXTERN_C int digest(char* msg_buf, int msg_buf_len, int h_session, char* data_bu
 //		overwrite					-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, int key_size,
-								 char* pub_key_label, int pub_key_label_len, char* pvt_key_label, int pvt_key_label_len,
-								 char* pub_exp, int pub_exp_len,
-								 int token, int private_, int modifiable, int extractable, int sign,
-								 int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
-								 int* h_pub_key, int* h_pvt_key);
+EXTERN_C int create_rsa_key_pair(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long key_size,
+		unsigned char* pub_key_label, unsigned long pub_key_label_len, unsigned char* pvt_key_label, unsigned long pvt_key_label_len,
+		unsigned char* pub_key_id, unsigned long pub_key_id_len, unsigned char* pvt_key_id, unsigned long pvt_key_id_len,
+		unsigned long mech_type, unsigned char* pub_exp, unsigned long pub_exp_len, unsigned long token, unsigned long pub_private, unsigned long pvt_private, unsigned long sensitive,
+		unsigned long modifiable, unsigned long extractable, unsigned long sign, unsigned long verify, unsigned long encrypt, unsigned long decrypt,
+		unsigned long wrap, unsigned long unwrap, unsigned long derive, unsigned long overwrite, unsigned long* h_pub_key, unsigned long* h_pvt_key);
 
 //----------------------------------------------------------------------------------------
 // create_ec_key_pair()
@@ -475,8 +479,14 @@ EXTERN_C int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, 
 //		pub_key_label_len			-- length of public key label
 //		pvt_key_label				-- label for the private key
 //		pvt_key_label_len			-- length of private key label
+//		pub_key_id					-- id for the public key
+//		pub_key_id_len				-- length of public key id
+//		pvt_key_id					-- id for the private key
+//		pvt_key_id_len				-- length of private key id
 //		token						-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
-//		private_					-- 1 to indicate the keys are private to the HSM and require an auth session; otherwise 0
+//		pub_private 				-- 1 to indicate the public key is marked private and can only be accessed after authentication; otherwise 0
+//		pvt_private 				-- 1 to indicate the private key is marked private and can only be accessed after authentication; otherwise 0
+//		sensitive	    			-- 1 to indicate the private key is sensitive; otherwise 0
 //	    modifiable					-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable					-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign						-- 1 to indicate the private key can sign; otherwise 0
@@ -486,15 +496,17 @@ EXTERN_C int create_rsa_key_pair(char* msg_buf, int msg_buf_len, int h_session, 
 //		wrap						-- 1 to indicate the public key can wrap; otherwise 0
 //		unwrap						-- 1 to indicate the private key can unwrap; otherwise 0
 //		derive						-- 1 to indicate the private key can be used to drive other keys; otherwise 0
-//		overwrite					-- 1 to indicate the an existing key pair with the same label name can be overwriten; otherwise 0
+//		overwrite					-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
-								char* ec_params,  int ec_params_len, char* pub_key_label,
-								int pub_key_label_len, char* pvt_key_label, int pvt_key_label_len,
-								int token, int private_, int modifiable, int extractable, int sign,
-								int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
-								int* h_pub_key, int* h_pvt_key);
+EXTERN_C int create_ec_key_pair(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* ec_params, unsigned long ec_params_len,
+		unsigned char* pub_key_label, unsigned long pub_key_label_len, unsigned char* pvt_key_label, unsigned long pvt_key_label_len,
+		unsigned char* pub_key_id, unsigned long pub_key_id_len, unsigned char* pvt_key_id, unsigned long pvt_key_id_len,
+		unsigned long token, unsigned long pub_private, unsigned long pvt_private, unsigned long sensitive,
+		unsigned long modifiable, unsigned long extractable, unsigned long sign, unsigned long verify,
+		unsigned long encrypt, unsigned long decrypt, unsigned long wrap, unsigned long unwrap, unsigned long derive,
+		unsigned long overwrite, unsigned long* h_pub_key, unsigned long* h_pvt_key);
 
 //----------------------------------------------------------------------------------------
 // create_secret_key()
@@ -512,10 +524,13 @@ EXTERN_C int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 //		h_session					-- handle of an open session with the HSM.
 //		key_label					-- label for the key
 //		key_label_len				-- length of key label
+//		key_id						-- id for the key
+//		key_id_len					-- length of key id
 //		key_size					-- size of the key in bits
 //		mech_type 					-- type of key mechanism to create
 //		token						-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
 //		private_					-- 1 to indicate the keys are private to the HSM and require an auth session; otherwise 0
+//		sensitive	    			-- 1 to indicate the private key is sensitive; otherwise 0
 //	    modifiable					-- 1 to indicate the keys can be modified; otherwise 0
 //		extractable					-- 1 to indicate the private key can be extracted; otherwise 0
 //		sign						-- 1 to indicate the private key can sign; otherwise 0
@@ -528,11 +543,13 @@ EXTERN_C int create_ec_key_pair(char* msg_buf, int msg_buf_len, int h_session,
 //		overwrite					-- 1 to indicate the an existing key pair with the same label name can be overwriten; otherwise 0
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int create_secret_key(char* msg_buf, int msg_buf_len, int h_session,
-					  	  	   char* key_label, int key_label_len, int mech_type, int key_size,
-							   int token, int private_, int modifiable, int extractable, int sign,
-							   int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
-							   int* h_secret_key);
+EXTERN_C int create_secret_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned long mech_type, unsigned long key_size,
+		unsigned long token, unsigned long private_, unsigned long sensitive, unsigned long modifiable,
+		unsigned long extractable, unsigned long sign, unsigned long verify, unsigned long encrypt, unsigned long decrypt,
+		unsigned long wrap, unsigned long unwrap, unsigned long derive, unsigned long overwrite,
+		unsigned long* h_secret_key);
 
 //----------------------------------------------------------------------------------------
 // get_slot_count()
@@ -549,7 +566,7 @@ EXTERN_C int create_secret_key(char* msg_buf, int msg_buf_len, int h_session,
 //		msg_buf_len	--	byte length of provided buffer
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int get_slot_count(char* msg_buf, int msg_buf_len, int* slot_count);
+EXTERN_C int get_slot_count(char* msg_buf, unsigned long msg_buf_len, unsigned long* slot_count);
 
 //----------------------------------------------------------------------------------------
 // get_token_count()
@@ -569,7 +586,7 @@ EXTERN_C int get_slot_count(char* msg_buf, int msg_buf_len, int* slot_count);
 //		msg_buf_len	--	byte length of provided buffer
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int get_token_count(char* msg_buf, int msg_buf_len, int* token_count);
+EXTERN_C int get_token_count(char* msg_buf, unsigned long msg_buf_len, unsigned long* token_count);
 
 
 //----------------------------------------------------------------------------------------
@@ -599,7 +616,7 @@ EXTERN_C int get_token_count(char* msg_buf, int msg_buf_len, int* token_count);
 //		data_buf_len	--	byte length of provided buffer
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int get_slot_info(char* msg_buf, int msg_buf_len, char* data_buf, int* data_buf_len, int* token_count);
+EXTERN_C int get_slot_info(char* msg_buf, unsigned long msg_buf_len, char* data_buf, unsigned long* data_buf_len, unsigned long* token_count);
 
 //----------------------------------------------------------------------------------------
 // get_attribute_value()
@@ -621,8 +638,8 @@ EXTERN_C int get_slot_info(char* msg_buf, int msg_buf_len, char* data_buf, int* 
 //		h_object				--  handle to the object that is to be queried for attribute value
 //		attribute_type			--  valid attribute type such as CKA_PRIME_1, CKA_PRIME_2, etc
 //----------------------------------------------------------------------------------------
-EXTERN_C int get_attribute_value(char* msg_buf, int msg_buf_len, int h_session, int h_object,
-								 int attribute_type, char *attribute_value, int* attribute_value_len);
+EXTERN_C int get_attribute_value(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long h_object,
+		unsigned long attribute_type, unsigned char *attribute_value, unsigned long* attribute_value_len);
 
 //----------------------------------------------------------------------------------------
 // set_attribute_value()
@@ -644,8 +661,8 @@ EXTERN_C int get_attribute_value(char* msg_buf, int msg_buf_len, int h_session, 
 //		h_object				--  handle to the object to update the attribute
 //		attribute_type			--  valid attribute type such as CKA_PRIME_1, CKA_PRIME_2, etc
 //----------------------------------------------------------------------------------------
-EXTERN_C int set_attribute_value(char* msg_buf, int msg_buf_len, int h_session, int h_object,
-								 int attribute_type, char *attribute_value, int attribute_value_len);
+EXTERN_C int set_attribute_value(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long h_object,
+		unsigned long attribute_type, unsigned char *attribute_value, unsigned long attribute_value_len);
 
 //----------------------------------------------------------------------------------------
 // generate_random()
@@ -661,10 +678,10 @@ EXTERN_C int set_attribute_value(char* msg_buf, int msg_buf_len, int h_session, 
 //		random_data_len			--  length of random data array
 //
 //	Inputs:
-//		msg_buf_len		--	byte length of provided error message buffer
-//		h_session		--  session handle
+//		msg_buf_len				--	byte length of provided error message buffer
+//		h_session				--  session handle
 //----------------------------------------------------------------------------------------
-EXTERN_C int generate_random(char* msg_buf, int msg_buf_len, int h_session, char* random_data, int random_data_len);
+EXTERN_C int generate_random(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* random_data, unsigned long random_data_len);
 
 //----------------------------------------------------------------------------------------
 // seed_random()
@@ -684,7 +701,7 @@ EXTERN_C int generate_random(char* msg_buf, int msg_buf_len, int h_session, char
 //		msg_buf_len				--	byte length of provided error message buffer
 //		h_session				--  session handle
 //----------------------------------------------------------------------------------------
-EXTERN_C int seed_random(char* msg_buf, int msg_buf_len, int h_session, char* seed_data, int seed_data_len);
+EXTERN_C int seed_random(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned char* seed_data, unsigned long seed_data_len);
 
 //----------------------------------------------------------------------------------------
 // destroy_object()
@@ -702,7 +719,7 @@ EXTERN_C int seed_random(char* msg_buf, int msg_buf_len, int h_session, char* se
 //		h_object		--  handle of object to destroy
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int destroy_object(char* msg_buf, int msg_buf_len, int h_session, int h_object);
+EXTERN_C int destroy_object(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long h_object);
 
 //----------------------------------------------------------------------------------------
 // import_data_object()
@@ -719,6 +736,8 @@ EXTERN_C int destroy_object(char* msg_buf, int msg_buf_len, int h_session, int h
 //		h_session		-- session handle
 //		data_label		-- label of the data object on the HSM
 //		data_label_len	-- length of data object label
+//		data_id			-- id of the data object on the HSM
+//		data_id_len		-- length of data object id
 //		value			-- binary array containing the data in clear
 //		value_len		-- length of the data value array
 //		token			-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
@@ -728,8 +747,9 @@ EXTERN_C int destroy_object(char* msg_buf, int msg_buf_len, int h_session, int h
 //		h_object			-- object handle
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int import_data_object(char* msg_buf, int msg_buf_len, int h_session, char* data_label, int data_label_len,
-		 	 	 	            char* value, int value_len, int token, int overwrite, int* h_object);
+EXTERN_C int import_data_object(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* data_label, unsigned long data_label_len, unsigned char* data_id, unsigned long data_id_len,
+		unsigned char* value, unsigned long value_len, unsigned long token, unsigned long overwrite, unsigned long* h_object);
 
 //----------------------------------------------------------------------------------------
 // import_rsa_public_key()
@@ -745,24 +765,27 @@ EXTERN_C int import_data_object(char* msg_buf, int msg_buf_len, int h_session, c
 //	Inputs:
 //		msg_buf_len			-- byte length of provided error message buffer
 //		h_session			-- session handle
-//		pub_key_label	  	-- label of the RSA public key object on the HSM
-//		pub_key_label_len	-- public key label length
-//		pub_exp				-- binary array containing the RSA key public exponent
-//		pub_exp_len			-- length of the public exponent array
-//		pub_mod				-- binary array containing the RSA key public modulus
-//		pub_mod_len			-- length of the public modulus array
+//		key_label	  		-- label of the RSA public key object on the HSM
+//		key_label_len		-- public key label length
+//		key_id				-- id for the public key
+//		key_id_len			-- length of public key id
+//		exp					-- binary array containing the RSA key public exponent
+//		exp_len				-- length of the public exponent array
+//		mod					-- binary array containing the RSA key public modulus
+//		mod_len				-- length of the public modulus array
 //		token				-- 1 to indicate the keys exist on the HSM token; otherwise 0 to indicate keys exist for life of session
 //		private_			-- 1 to indicate the keys are private to the HSM and require an authenticated session; otherwise 0
 //	    modifiable			-- 1 to indicate the keys can be modified; otherwise 0
 //		verify				-- 1 to indicate the public key can verify; otherwise 0
 //		encrypt				-- 1 to indicate the public key can encrypt; otherwise 0
 //		wrap				-- 1 to indicate the public key can wrap; otherwise 0
-//		overwrite			-- 1 to indicate the an existing key pair with the same label name can be overwriten; otherwise 0
+//		overwrite			-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
 //----------------------------------------------------------------------------------------
-EXTERN_C int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pub_key_label, int pub_key_label_len,
-						           char* pub_exp, int pub_exp_len, char* pub_mod, int pub_mod_len,
-						           int token, int _private, int modifiable, int verify, int encrypt, int wrap, int overwrite, int* h_pub_key);
-
+EXTERN_C int import_rsa_public_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned char* exp, unsigned long exp_len, unsigned char* mod, unsigned long mod_len,
+		unsigned long token, unsigned long _private, unsigned long modifiable, unsigned long verify,
+		unsigned long encrypt, unsigned long wrap, unsigned long overwrite, unsigned long* h_pub_key);
 
 //----------------------------------------------------------------------------------------
 // import_ec_public_key()
@@ -778,8 +801,10 @@ EXTERN_C int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session
 //	Inputs:
 //		msg_buf_len			-- byte length of provided error message buffer
 //		h_session			-- session handle
-//		pub_key_label	  	-- label of the EC public key object on the HSM
-//		pub_key_label_len	-- public key label length
+//		key_label	  		-- label of the EC public key object on the HSM
+//		key_label_len		-- public key label length
+//		key_id				-- id for the public key
+//		key_id_len			-- length of public key id
 //		ec_params			-- binary array containing the EC parameters curve definition or OID
 //		ec_params_len		-- length of the EC parameters curve definition or OID
 //		ec_point			-- binary array containing the unique EC point
@@ -792,9 +817,10 @@ EXTERN_C int import_rsa_public_key(char* msg_buf, int msg_buf_len, int h_session
 //		wrap				-- 1 to indicate the public key can wrap; otherwise 0
 //		overwrite			-- 1 to indicate the an existing key pair with the same label name can be overwritten; otherwise 0
 //----------------------------------------------------------------------------------------
-EXTERN_C int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session, char* pub_key_label, int pub_key_label_len,
-						 	 	  char* ec_params, int ec_params_len, char* ec_point, int ec_point_len,
-								  int token, int _private, int modifiable, int verify, int encrypt, int wrap, int overwrite, int* h_pub_key);
+EXTERN_C int import_ec_public_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned char* ec_params, unsigned long ec_params_len, unsigned char* ec_point, unsigned long ec_point_len,
+		unsigned long token, unsigned long _private, unsigned long modifiable, unsigned long verify, unsigned long encrypt, unsigned long wrap, unsigned long overwrite, unsigned long* h_pub_key);
 
 //----------------------------------------------------------------------------------------
 // wrap_key()
@@ -818,9 +844,9 @@ EXTERN_C int import_ec_public_key(char* msg_buf, int msg_buf_len, int h_session,
 //		mech_type		--  wrapping key mechanism to use (3DES-CBC, AES-128-CBC, etc)
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int wrap_key(char* msg_buf, int msg_buf_len, int h_session, int h_key,
-					  int h_wrap_key, char* iv, int iv_len, int mech_type,
-					  char *key_buf, int* key_buf_len);
+EXTERN_C int wrap_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, unsigned long h_key,
+		unsigned long h_wrap_key, unsigned char* iv, unsigned long iv_len, unsigned long mech_type,
+		unsigned char *key_buf, unsigned long* key_buf_len);
 
 //----------------------------------------------------------------------------------------
 // unwrap_private_key()
@@ -841,28 +867,32 @@ EXTERN_C int wrap_key(char* msg_buf, int msg_buf_len, int h_session, int h_key,
 //		mech_type		--  wrapping key mechanism to use (3DES-CBC, AES-128-CBC, etc)
 //		key_label		--  key label of new private key
 //		key_label_len	--  key label length
+//		key_id			--  key id of new private key
+//		key_id_len		--  key id length
 //		key_buf		    --  wrapped private key bytes
 //		key_buf_len		--  length of the wrapped private key bytes
 //		key_type		--	type of private key (DES, DES2, DES3, AES, etc)
 //		token			--	1 to indicate the private key exists on the token and not the session; otherwise 0
 //		private_		--	1 to indicate the private key is private and can only be accessed after authentication; otherwise 0
+//		sensitive	    --  1 to indicate the private key is sensitive; otherwise 0
 //		modifiable		--	1 to indicate the private key can be modified; otherwise 0
 //		extractable		--	1 to indicate the private key can be extracted; otherwise 0
 //		sign			--	1 to indicate the private key can sign; otherwise 0
 //		decrypt			--	1 to indicate the private key can decrypt; otherwise 0
 //		unwrap			--	1 to indicate the private key can unwrap; otherwise 0
-//		overwrite		--  1 to indicate the existing private key pair with the same label name can be overwriten; otherwise 0
+//		overwrite		--  1 to indicate the existing private key pair with the same label name can be overwritten; otherwise 0
 //		derive			--	1 to indicate the private key can be used to derive other keys; otherwise 0
 //
 //	Outputs:
 //		h_pvt_key		-- object handle
 //----------------------------------------------------------------------------------------
-EXTERN_C int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
-					   	   	    int h_wrap_key, char* iv, int iv_len, int mech_type,
-								char* key_label, int key_label_len, char* key_buf, int key_buf_len, int key_type,
-								int token, int private_, int modifiable, int extractable,
-								int sign, int decrypt, int unwrap, int derive, int overwrite,
-								int* h_pvt_key);
+EXTERN_C int unwrap_private_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned long h_wrap_key, unsigned char* iv, unsigned long iv_len, unsigned long mech_type,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned char* key_buf, unsigned long key_buf_len, unsigned long key_type,
+		unsigned long token, unsigned long private_, unsigned long sensitive, unsigned long modifiable, unsigned long extractable,
+		unsigned long sign, unsigned long decrypt, unsigned long unwrap, unsigned long derive, unsigned long overwrite,
+		unsigned long* h_pvt_key);
 
 //----------------------------------------------------------------------------------------
 // unwrap_secret_key()
@@ -884,12 +914,15 @@ EXTERN_C int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
 //		mech_type		--  wrapping key mechanism to use (3DES-CBC, AES-128-CBC, etc)
 //		key_label		--  key label for new secret key
 //      key_label_len	--	length of key label
+//		key_id			--  key id for new secret key
+//      key_id_len		--	length of key id
 //		key_buf		    --  wrapped secret key bytes
 //		key_buf_len		--  length of the wrapped secret key bytes
 //		key_type		--	type of secret key (DES, DES2, DES3, AES, etc)
 //		key_size		--	size of the key in bits (112, 128, 192, 256, etc)
 //		token			--	1 to indicate the secret key exists on the token and not the session; otherwise 0
 //		private_		--	1 to indicate the secret key is private and can only be accessed after authentication; otherwise 0
+//		sensitive	   	--  1 to indicate the private key is sensitive; otherwise 0
 //		modifiable		--	1 to indicate the secret key can be modified; otherwise 0
 //		extractable		--	1 to indicate the secret key can be extracted; otherwise 0
 //		sign			--	1 to indicate the secret key can sign; otherwise 0
@@ -898,16 +931,48 @@ EXTERN_C int unwrap_private_key(char* msg_buf, int msg_buf_len, int h_session,
 //		decrypt			--	1 to indicate the secret key can decrypt; otherwise 0
 //		wrap			--	1 to indicate the secret key can wrap; otherwise 0
 //		unwrap			--	1 to indicate the secret key can unwrap; otherwise 0
-//		overwrite		--  1 to indicate the existing secret key with the same label name can be overwriten; otherwise 0
+//		overwrite		--  1 to indicate the existing secret key with the same label name can be overwritten; otherwise 0
 //		derive			--	1 to indicate the secret key can be used to derive other keys; otherwise 0
 //
 //----------------------------------------------------------------------------------------
-EXTERN_C int unwrap_secret_key(char* msg_buf, int msg_buf_len, int h_session,
-							   int h_wrap_key, char* iv, int iv_len, int mech_type,
-							   char* key_label, int key_label_len, char* key_buf, int key_buf_len, int key_type, int key_size,
-							   int token, int private_, int modifiable, int extractable,
-							   int sign, int verify, int encrypt, int decrypt, int wrap, int unwrap, int derive, int overwrite,
-							   int* h_secret_key);
+EXTERN_C int unwrap_secret_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session,
+		unsigned long h_wrap_key, unsigned char* iv, unsigned long iv_len, unsigned long mech_type,
+		unsigned char* key_label, unsigned long key_label_len, unsigned char* key_id, unsigned long key_id_len,
+		unsigned char* key_buf, unsigned long key_buf_len,
+		unsigned long key_type, unsigned long key_size,	unsigned long token, unsigned long private_,
+		unsigned long sensitive, unsigned long modifiable, unsigned long extractable, unsigned long sign,
+		unsigned long verify, unsigned long encrypt, unsigned long decrypt, unsigned long wrap, unsigned long unwrap,
+		unsigned long derive, unsigned long overwrite, unsigned long* h_secret_key);
+
+
+//----------------------------------------------------------------------------------------
+// get_mechanism_info()
+//	Queries the slot and returns information supported PKCS#11 support mechanism info.
+//
+//	Returns:
+//		FALSE if an error occurs otherwise TRUE
+//
+//	Modifies:
+//		msg_buf			--  contains error messages
+//		data_buf		--	to contain info with newline separating records and commas
+//							separating fields.
+//							Each record has:
+//								* mechanism name
+//								* mechanism value in base16 (hex)
+//								* min key size
+//								* max key size
+//								* flags
+//	 	data_buf_len	--  modifies to the size allocated
+//		mech_count		--  modified to the number of mechanisms reported
+//
+//	Inputs:
+//		msg_buf_len		--	byte length of provided buffer
+//		slot			--  slot number
+//		data_buf_len	--	byte length of provided buffer
+//
+//----------------------------------------------------------------------------------------
+EXTERN_C int get_mechanism_info(char* msg_buf, unsigned long msg_buf_len, unsigned long slot, char* data_buf, unsigned long* data_buf_len, unsigned long* mech_count);
+
 
 
 #endif // #ifndef _p11HSM_H
