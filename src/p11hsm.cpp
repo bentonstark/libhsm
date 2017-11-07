@@ -1071,7 +1071,7 @@ int login(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, uns
 	rv = _p11->C_Login(h_session, user_type, user_pin, user_pin_len);
 	if (rv != CKR_OK)
 	{
-		snprintf(msg_buf, msg_buf_len, "login: PCKS#11 C_Login failed; return value %lu.", rv);
+		snprintf(msg_buf, msg_buf_len, "login: PKCS#11 C_Login failed; return value %lu.", rv);
    		__append_return_code(rv, msg_buf, msg_buf_len);
 		return FALSE;
 	}

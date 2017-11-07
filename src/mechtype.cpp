@@ -832,15 +832,15 @@ char* __mechanism_type_to_str(CK_MECHANISM_TYPE mech_type) {
 	case UTIMACO_CKM_RSA_PKCS_MULTI:
 		return (char*) "CKM_RSA_PKCS_MULTI [utimaco]";
 	case UTIMACO_CKM_RSA_X_509_MULTI:
-		return (char*) "KM_RSA_X_509_MULTI [utimaco]";
+		return (char*) "CKM_RSA_X_509_MULTI [utimaco]";
 	case UTIMACO_CKM_DES3_RETAIL_MAC:
 		return (char*) "CKM_DES3_RETAIL_MAC [utimaco]";
 	case UTIMACO_CKM_ECDSA_ECIES:
-		return (char*) "KM_ECDSA_ECIES [utimaco]";
+		return (char*) "CKM_ECDSA_ECIES [utimaco]";
 	case UTIMACO_CKM_ECDSA_MULTI:
 		return (char*) "CKM_ECDSA_MULTI [utimaco]";
 	case UTIMACO_CKM_DES_CBC_WRAP:
-		return (char*) "KM_DES_CBC_WRAP [utimaco]";
+		return (char*) "CKM_DES_CBC_WRAP [utimaco]";
 	case UTIMACO_CKM_AES_CBC_WRAP:
 		return (char*) "CKM_AES_CBC_WRAP [utimaco]";
 	case UTIMACO_CKM_UTI_AES_CMAC:
