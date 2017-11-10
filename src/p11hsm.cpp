@@ -3323,7 +3323,7 @@ int wrap_key(char* msg_buf, unsigned long msg_buf_len, unsigned long h_session, 
 	}
 
 	// value check
-	if (key_buf_len <=0)
+	if (*key_buf_len <=0)
 	{
 		snprintf(msg_buf, msg_buf_len, "wrap_key: key_buf_len value must be greater than zero.");
 		return FALSE;
