@@ -12,10 +12,10 @@ The libhsm library has been tested to work with the following HSMs.  Not all mec
 - Utimaco CryptoServer LAN (Se-Series Gen2)
 - FutureX Vectera Plus (6.5.0.4-480B)
 - Thales NShield Solo XC F3 High Speed 
-- Cavium LiquidSecurity PCIe HSM* (requires latest firmware Nov 2017)
+- Cavium LiquidSecurity PCIe HSM (requires latest firmware Nov 2017)
 - OpenDNSSEC SoftHSM 2.2.0
 		
-* CKA_DERIVE statements must be commented out from all templates		
+Note: CKA_DERIVE statements must be commented out from all templates with test Cavium HSM firmware.		
 		
 ## CentOS Build	
 ```
