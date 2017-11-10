@@ -1,4 +1,4 @@
-#libhsm
+# libhsm
 C/C++ shared library that can be compiled with g++/gcc on Linux 64-bit and Windows 64-bit using Visual Studio or g++/gcc.  The library provides a simplified API for access the PKCS#11 API to support higher level languages.  Compiles with OASIS PKCS#11 v2.20. 
 
 ## Supported HSMs
