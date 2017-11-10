@@ -15,7 +15,7 @@ The libhsm library has been tested to work with the following HSMs.  Not all mec
 - Cavium LiquidSecurity PCIe HSM (requires latest firmware Nov 2017)
 - OpenDNSSEC SoftHSM 2.2.0
 		
-Note: CKA_DERIVE statements must be commented out from all templates with test Cavium HSM firmware.		
+Note: Latest Cavium firmware requires CKA_DERIVE statements to be commented out from all templates.		
 		
 ## CentOS Build	
 ```
