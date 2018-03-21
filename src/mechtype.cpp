@@ -1,9 +1,12 @@
-/*
- * mechtype.cpp
- *
- *  Created on: Sep 22, 2017
- *      Author: bestark
- */
+//----------------------------------------------------------------------------------------
+// mechtype.cpp
+//
+// This source code is licensed under the GPL v2 license found in the
+// LICENSE.txt file in the root directory of this source tree.
+//
+// Written by Benton Stark (benton.stark@gmail.com)
+// Sept. 7, 2016
+//----------------------------------------------------------------------------------------
 
 #include "mechtype.h"
 
